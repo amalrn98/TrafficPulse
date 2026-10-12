@@ -18,6 +18,7 @@ COPY . .
 RUN npm run build --workspace=@trafficpulse/classifier
 RUN npm run build --workspace=@trafficpulse/tracker
 RUN npm run build --workspace=@trafficpulse/middleware
+RUN npm run db:generate --workspace=@trafficpulse/dashboard
 RUN npm run build --workspace=@trafficpulse/dashboard
 
 # Step 3: Production runner
