@@ -6,7 +6,8 @@
   "types": "./dist/src/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "node --test dist/tests/classifier.test.js"
+    "test": "node --test dist/tests/classifier.test.js dist/tests/evaluation.test.js",
+    "test:eval": "node --test dist/tests/evaluation.test.js"
   },
   "keywords": [
     "ai-detection",

@@ -6,25 +6,49 @@
   var siteId = currentScript ? currentScript.getAttribute('data-site-id') : '';
   var apiHost = currentScript ? (currentScript.getAttribute('data-api-host') || '') : '';
   var autoTrack = currentScript ? currentScript.getAttribute('data-auto-track') !== 'false' : true;
+  var respectDnt = currentScript ? currentScript.getAttribute('data-respect-dnt') !== 'false' : true;
+  var disableBiometrics = currentScript ? currentScript.getAttribute('data-disable-biometrics') === 'true' : false;
+
+  function isOptedOut() {
+    try {
+      if (window.localStorage && window.localStorage.getItem('trafficpulse_opt_out') === '1') {
+        return true;
+      }
+    } catch(e) {}
+
+    if (respectDnt) {
+      var nav = navigator || {};
+      if (nav.doNotTrack === '1' || window.doNotTrack === '1' || nav.msDoNotTrack === '1') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (isOptedOut()) return;
 
   var startTime = Date.now();
   var mouseCoords = [];
   var scrollCount = 0;
   var interactionCount = 0;
   var hasDispatched = false;
+  var idempotencyKey = 'tp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
-  window.addEventListener('mousemove', function(e) {
-    interactionCount++;
-    if (mouseCoords.length < 20) {
-      mouseCoords.push({ x: e.clientX, y: e.clientY });
-    }
-  }, { passive: true });
+  if (!disableBiometrics) {
+    window.addEventListener('mousemove', function(e) {
+      interactionCount++;
+      if (mouseCoords.length < 20) {
+        mouseCoords.push({ x: e.clientX, y: e.clientY });
+      }
+    }, { passive: true });
 
-  window.addEventListener('scroll', function() {
-    interactionCount++;
-    scrollCount++;
-  }, { passive: true });
+    window.addEventListener('scroll', function() {
+      interactionCount++;
+      scrollCount++;
+    }, { passive: true });
+  }
 
+  // Count key presses only - NEVER log raw key values or form input contents
   window.addEventListener('keydown', function() {
     interactionCount++;
   }, { passive: true });
@@ -70,17 +94,19 @@
     var scr = screen || {};
     return {
       siteId: siteId,
+      idempotencyKey: idempotencyKey,
       path: location.pathname || '/',
       method: 'GET',
       userAgent: nav.userAgent || '',
+      timestamp: new Date().toISOString(),
       clientSignals: {
         webdriver: !!nav.webdriver,
         hasChromeObject: !!window.chrome,
         hasPlugins: !!(nav.plugins && nav.plugins.length > 0),
         screenConsistency: scr.width > 0 && scr.height > 0,
         webglRenderer: getWebGLRenderer(),
-        mouseEntropy: calculateMouseEntropy(),
-        scrollEntropy: scrollCount > 0 ? 1 : 0,
+        mouseEntropy: disableBiometrics ? undefined : calculateMouseEntropy(),
+        scrollEntropy: disableBiometrics ? undefined : (scrollCount > 0 ? 1 : 0),
         interactionCount: interactionCount,
         dwellTimeMs: Date.now() - startTime,
         viewportWidth: window.innerWidth || 0,
@@ -90,17 +116,28 @@
   }
 
   function flush() {
-    if (!siteId) return;
+    if (!siteId || hasDispatched || isOptedOut()) return;
     hasDispatched = true;
-    var payload = JSON.stringify(collect());
-    var url = apiHost + '/api/v1/events';
 
+    var payload = JSON.stringify(collect());
+    var url = (apiHost ? apiHost.replace(/\/$/, '') : '') + '/api/v1/events';
+
+    var beaconSent = false;
     if (navigator.sendBeacon) {
-      navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
-    } else if (window.fetch) {
+      try {
+        beaconSent = navigator.sendBeacon(url, new Blob([payload], { type: 'application/json' }));
+      } catch(e) {
+        beaconSent = false;
+      }
+    }
+
+    if (!beaconSent && window.fetch) {
       window.fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': idempotencyKey
+        },
         body: payload,
         keepalive: true
       }).catch(function() {});
@@ -115,25 +152,23 @@
   });
 
   if (autoTrack && siteId) {
-    setTimeout(flush, 2500);
+    setTimeout(function() {
+      if (!hasDispatched) flush();
+    }, 2000);
   }
 
   window.TrafficPulse = {
     flush: flush,
     collect: collect,
-    track: function(customName, data) {
-      var p = collect();
-      p.eventName = customName;
-      p.customData = data;
-      var url = apiHost + '/api/v1/events';
-      if (window.fetch) {
-        window.fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(p),
-          keepalive: true
-        }).catch(function() {});
-      }
+    optOut: function() {
+      try {
+        if (window.localStorage) window.localStorage.setItem('trafficpulse_opt_out', '1');
+      } catch(e) {}
+    },
+    optIn: function() {
+      try {
+        if (window.localStorage) window.localStorage.removeItem('trafficpulse_opt_out');
+      } catch(e) {}
     }
   };
 })();

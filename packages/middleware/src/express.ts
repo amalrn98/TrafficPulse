@@ -2,6 +2,7 @@ import { TrafficClassifier, ClassificationResult } from '@trafficpulse/classifie
 
 export interface ExpressMiddlewareOptions {
   siteId: string;
+  apiKey?: string;
   apiHost?: string;
   ignoredPaths?: string[];
   onClassified?: (req: any, res: any, classification: ClassificationResult) => boolean | void;
@@ -37,6 +38,8 @@ export function createTrafficPulseMiddleware(options: ExpressMiddlewareOptions) 
     req.trafficPulse = classification;
 
     res.setHeader('X-TrafficPulse-Category', classification.category);
+    res.setHeader('X-TrafficPulse-ActorType', classification.actorType);
+    res.setHeader('X-TrafficPulse-Verification', classification.verificationStatus);
     if (classification.botIdentifier) {
       res.setHeader('X-TrafficPulse-Bot', classification.botIdentifier);
     }
@@ -49,27 +52,29 @@ export function createTrafficPulseMiddleware(options: ExpressMiddlewareOptions) 
 
     // Asynchronously dispatch event
     if (options.siteId && options.apiHost) {
+      const idempotencyKey = `mw_exp_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       const payload = {
         siteId: options.siteId,
+        idempotencyKey,
         path,
         method: req.method,
-        trafficCategory: classification.category,
-        botIdentifier: classification.botIdentifier,
-        verifiedOrigin: classification.verifiedOrigin,
-        requestHeaders: {
-          userAgent: ua,
-          referer: req.headers['referer'],
-        },
-        clientHints: {
-          deviceType: /mobile|android|iphone/i.test(ua) ? 'mobile' : 'desktop',
-        },
+        userAgent: ua,
+        referer: req.headers['referer'],
         timestamp: new Date().toISOString(),
       };
 
       const ingestUrl = `${options.apiHost.replace(/\/$/, '')}/api/v1/events`;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      };
+      if (options.apiKey) {
+        headers['Authorization'] = `Bearer ${options.apiKey}`;
+      }
+
       fetch(ingestUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       }).catch(() => {});
     }

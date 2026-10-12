@@ -9,6 +9,8 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "file:./dev.db"
 
     steps:
       - name: Checkout Code
@@ -23,14 +25,16 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Build Packages
+      - name: Setup Prisma Database Client
         run: |
-          npm run build --workspace=@trafficpulse/classifier
-          npm run build --workspace=@trafficpulse/tracker
-          npm run build --workspace=@trafficpulse/middleware
+          npm run db:generate --workspace=@trafficpulse/dashboard
+          npm run db:push --workspace=@trafficpulse/dashboard
 
-      - name: Run Classifier Tests
-        run: npm run test --workspace=@trafficpulse/classifier
+      - name: Build All Workspaces
+        run: npm run build
 
-      - name: Build Dashboard
+      - name: Run Monorepo Test Suite
+        run: npm test
+
+      - name: Build Production Dashboard
         run: npm run build --workspace=@trafficpulse/dashboard

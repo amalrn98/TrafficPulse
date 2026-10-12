@@ -14,5 +14,5 @@
       "@trafficpulse/classifier": ["../classifier/src/index"]
     }
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*", "tests/**/*"]
 }

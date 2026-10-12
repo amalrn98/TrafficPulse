@@ -1,74 +1,102 @@
 # TrafficPulse ⚡
 
 <p align="center">
-  <strong>Production-grade, privacy-preserving web traffic analytics for the Agentic Era.</strong>
+  <strong>Evidence-based, privacy-conscious web traffic observability and classification for the agentic web.</strong>
 </p>
 
 <p align="center">
   <a href="https://github.com/mythicavalon/TrafficPulse/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache 2.0"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D20.0.0-green.svg" alt="Node Version"></a>
   <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-14-black.svg" alt="Next.js"></a>
-  <a href="https://www.docker.com/"><img src="https://img.shields.io/badge/docker-ready-2496ED.svg" alt="Docker"></a>
+  <a href="https://www.prisma.io/"><img src="https://img.shields.io/badge/Prisma-5.22-teal.svg" alt="Prisma ORM"></a>
   <a href="https://github.com/mythicavalon/TrafficPulse/actions"><img src="https://img.shields.io/badge/build-passing-brightgreen.svg" alt="Build Status"></a>
 </p>
 
 ---
 
-## 🎯 The Agentic Era Blind Spot
+## 🎯 What TrafficPulse Does (and What It Does Not Claim)
 
-In 2026, **over 50% of web traffic is non-human**. Traditional web analytics tools (Google Analytics, Mixpanel, Plausible) lump this into opaque "Direct" traffic or fail to capture it entirely because headless crawlers don't execute client-side JavaScript. Meanwhile, traditional WAFs (Cloudflare, DataDome) only offer binary blocking rather than **intelligent observability**.
+**TrafficPulse** is an open-source analytics and observability platform designed to analyze web traffic across human browsers, traditional scrapers, search engine bots, and AI-associated crawlers.
 
-**TrafficPulse** bridges this gap: an open-source, production-ready platform that classifies every request across:
-1. **Foundation Model Pre-trainers** (`GPTBot`, `ClaudeBot`, `CCBot`, `Bytespider`, etc.) harvesting data for model weights.
-2. **Real-time AI Inference / RAG Agents** (`PerplexityBot`, `ChatGPT-User`, `Applebot-Extended`) fetching live web context for user prompts.
-3. **Autonomous Agent Swarms** (`AutoGPT`, `browser-use`, `LangChain`, `CrewAI`, `MultiOn`) navigating headless browsers.
-4. **Search Engine Indexers** (`Googlebot`, `Bingbot`, `DuckDuckBot`, `YandexBot`).
-5. **Organic Human Visitors** verified via biometric interaction entropy and browser signatures.
+### Distinct Levels of Evidence
+TrafficPulse separates evidence levels to avoid misleading conflations:
+1. **Declared Identity**: A client transmits a User-Agent claiming to be a crawler (e.g., `GPTBot`). Anyone can forge a header.
+2. **Signature Match**: The User-Agent matches recognized regex signatures for known crawler infrastructure.
+3. **Network Verification**: The client IP falls within published, official IP/CIDR ranges published by the claiming organization (e.g., OpenAI, Anthropic, Google, Microsoft, Perplexity).
+4. **Behavioral Telemetry**: Client-side interaction entropy (mouse directional jitter, scroll deltas, session dwell time) collected via non-invasive client sensors.
+5. **Downstream Content Use (Unobservable)**: *TrafficPulse does NOT and CANNOT prove whether retrieved content was stored, indexed, retained for foundation model pre-training weights, or discarded.* Identifying an AI-associated crawler demonstrates network retrieval by that entity's infrastructure, not the downstream computational use.
+
+### Epistemic Guarantees
+- **No Simulated Data Contamination**: Production mode never generates artificial analytics. Demo sandbox data is strictly flagged (`isDemo: true`) and isolated at the database level.
+- **Server Authority**: The ingestion server authoritatively classifies incoming events. Client-submitted classification claims (such as `trafficCategory: "human"` or `verifiedOrigin: true`) are untrusted and completely ignored.
+- **Heuristic Confidence**: Confidence values are documented as heuristic scores (0.0 to 1.0) reflecting available evidence, never fabricated as statistically calibrated probabilities.
+- **Unknown Ambiguity**: Requests lacking recognized patterns or displaying conflicting signals are labeled as `unknown` rather than forced into a speculative category.
+- **Privacy Minimization**: The tracker sensor records interaction counts and Shannon entropy. It **never** collects raw keystrokes, character inputs, or form field values.
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture & Data Flow
 
 ```mermaid
 flowchart TD
-    Client[Incoming Request] --> Gateway{Ingestion Layer}
+    Client[Client / Crawler Request] --> Ingestion{Ingestion Boundary}
 
-    subgraph Ingestion["Zero-Latency Ingestion"]
-        Gateway -->|HTML Pages| Tracker["Client Telemetry Sensor (<3KB script)<br/>Captures biometrics, WebGL, entropy"]
-        Gateway -->|Server / Non-JS| Middleware["Edge / Server Middleware<br/>Next.js • Express • Cloudflare"]
+    subgraph Collection["Data Collection Layer"]
+        Ingestion -->|HTML Browser Sessions| Sensor["Client Micro-Sensor (5.4 KB raw / 1.8 KB gzip)<br/>Collects interaction entropy & WebGL hints"]
+        Ingestion -->|Edge / Server Middleware| MW["Middleware Adapters<br/>Next.js • Express • Cloudflare Workers"]
     end
 
-    Tracker --> API["Ingestion API: POST /api/v1/events"]
-    Middleware -->|Async non-blocking| API
+    Sensor -->|HTTP POST with Idempotency Key| API["Ingestion API: POST /api/v1/events"]
+    MW -->|Async Non-Blocking Dispatch with API Key| API
+
+    subgraph SecurityBoundary["Server Authorization & Validation"]
+        API --> RateLimit["Token-Bucket Rate Limiter"]
+        API --> Validator["Strict Schema Validation & PII Sanitization"]
+        API --> TenantAuth["Site Authorization & Tenant Isolation"]
+    end
 
     subgraph CoreEngine["@trafficpulse/classifier"]
-        API --> Classifier["Heuristic & Signature Engine<br/>300+ AI bot rules • CIDR verification • Entropy analysis"]
+        TenantAuth --> Engine["Epistemic Classifier Engine<br/>CIDR Subnet Verification • Header Anomalies • Heuristics"]
     end
 
-    Classifier --> DB[(Storage Engine / SQLite / Postgres)]
-    DB --> Dashboard["TrafficPulse Analytics Dashboard<br/>Live Agent Feed • AI Content Ratio • Defense Rules"]
+    Engine --> Storage[(Persistent Database<br/>Prisma ORM • SQLite / PostgreSQL)]
+    Storage --> Dashboard["TrafficPulse Analytics Dashboard<br/>UTC Timeseries • Top Actors • Defense Presets"]
 ```
 
 ---
 
-## 🚀 2-Click Quickstart Integration
+## 📊 Classification Taxonomy
 
-### Option 1: Drop-in HTML Tag (Zero Backend Changes)
-Embed this snippet into your HTML `<head>` on any website (WordPress, Webflow, React, static HTML):
+| Concept | Enum Values / Schema | Description |
+| :--- | :--- | :--- |
+| **Actor Type** | `human_browser`<br/>`ai_crawler`<br/>`ai_agent`<br/>`search_crawler`<br/>`automation_tool`<br/>`unknown` | Inferred category of entity driving the HTTP request. |
+| **Verification** | `verified`<br/>`claimed`<br/>`inferred`<br/>`unverified`<br/>`unknown` | `verified`: Matched published CIDR block.<br/>`claimed`: Declared signature without network verification.<br/>`inferred`: Corroborated via browser sensors/headers.<br/>`unverified`: Declared signature failed published CIDR check. |
+| **Activity Type** | `page_view`<br/>`content_fetch`<br/>`api_query`<br/>`unknown` | Observed request interaction mode. |
+| **Confidence** | `0.00` to `1.00` (heuristic) | Signal confidence based on evidence corroboration. |
+
+---
+
+## 🚀 Integration Guides
+
+### Option 1: Drop-in Browser Sensor
+Paste into your `<head>` tag. Tested bundle size: **5.4 KB uncompressed, ~1.8 KB gzipped**.
 
 ```html
 <script defer 
   src="https://your-trafficpulse-instance.com/trafficpulse.js" 
   data-site-id="YOUR_SITE_ID"
+  data-respect-dnt="true"
 ></script>
 ```
 
-### Option 2: Next.js Edge Middleware (Zero Latency)
-Captures non-JS scrapers, cURL requests, and bots before your page renders:
+#### Sensor Features & Privacy Controls
+- **Do Not Track (DNT)**: Enabled by default (`data-respect-dnt="true"`). Respects `navigator.doNotTrack`.
+- **Explicit Opt-out**: `window.TrafficPulse.optOut()` sets localStorage flag and terminates tracking.
+- **Biometric Disabling**: Add `data-disable-biometrics="true"` to prevent mouse and scroll entropy calculation.
+- **Deduplication**: Generates an idempotency key (`tp_<timestamp>_<random>`) per page view. Prevents double-counting when `visibilitychange` and `pagehide` both fire.
 
-```bash
-npm install @trafficpulse/middleware @trafficpulse/classifier
-```
+### Option 2: Next.js Edge Middleware
+Captures non-JavaScript scrapers and crawlers before rendering:
 
 ```typescript
 // middleware.ts
@@ -76,7 +104,14 @@ import { withTrafficPulse } from '@trafficpulse/middleware';
 
 export default withTrafficPulse({
   siteId: process.env.TRAFFICPULSE_SITE_ID!,
-  apiHost: process.env.TRAFFICPULSE_HOST!, // e.g., 'https://analytics.yourdomain.com'
+  apiKey: process.env.TRAFFICPULSE_API_KEY!,
+  apiHost: 'https://analytics.yourcompany.com',
+  onClassified: (req, classification) => {
+    // Optional defense hook
+    if (classification.category === 'generic_bot') {
+      return new Response('Access Denied', { status: 403 });
+    }
+  },
 });
 
 export const config = {
@@ -84,7 +119,7 @@ export const config = {
 };
 ```
 
-### Option 3: Express.js / Node.js
+### Option 3: Express.js
 ```javascript
 const express = require('express');
 const { createTrafficPulseMiddleware } = require('@trafficpulse/middleware');
@@ -92,7 +127,8 @@ const { createTrafficPulseMiddleware } = require('@trafficpulse/middleware');
 const app = express();
 
 app.use(createTrafficPulseMiddleware({
-  siteId: 'YOUR_SITE_ID',
+  siteId: process.env.TRAFFICPULSE_SITE_ID,
+  apiKey: process.env.TRAFFICPULSE_API_KEY,
   apiHost: 'http://localhost:3000',
 }));
 ```
@@ -103,90 +139,100 @@ import { trafficPulseWorker } from '@trafficpulse/middleware';
 
 export default {
   fetch: trafficPulseWorker(async (request, env, ctx) => {
-    return new Response('Hello World');
+    return new Response('OK');
   }, {
     siteId: 'YOUR_SITE_ID',
-    apiHost: 'https://analytics.yourdomain.com',
+    apiKey: 'YOUR_API_KEY',
+    apiHost: 'https://analytics.yourcompany.com',
   }),
 };
 ```
 
 ---
 
-## 📊 Traffic Classification Taxonomy
+## 🔒 Security & Data Integrity Controls
 
-| Category | Identifier | Primary Intent | Signatures & Examples |
-| :--- | :--- | :--- | :--- |
-| **Organic Human** | `human` | User browsing | Real desktop/mobile browsers with high mouse/scroll entropy |
-| **LLM Training Crawler** | `llm_training` | Pre-training datasets | `GPTBot`, `ClaudeBot`, `CCBot`, `Bytespider`, `Google-Extended`, `Meta-ExternalAgent` |
-| **AI Inference / RAG** | `ai_agent` | Real-time citation & synthesis | `PerplexityBot`, `ChatGPT-User`, `OAI-SearchBot`, `Applebot-Extended`, Autonomous Agent Swarms |
-| **Search Engine Bot** | `search_engine` | SEO indexing | `Googlebot`, `Bingbot`, `YandexBot`, `Baiduspider`, `DuckDuckBot` |
-| **Automated Scraper** | `generic_bot` | Scraping / Probing | Puppeteer, Playwright, HeadlessChrome, cURL, Python-requests, Scrapy |
-
----
-
-## 🐳 Self-Hosting with Docker
-
-You can spin up TrafficPulse in one command:
-
-```bash
-# Clone the repository
-git clone https://github.com/mythicavalon/TrafficPulse.git
-cd TrafficPulse
-
-# Start with Docker Compose
-docker compose up -d
-```
-
-Open `http://localhost:3000` to access the dashboard.
+- **Database-Level Tenant Isolation**: Events and aggregations are scoped by `siteId`. Cross-site leaks are blocked by indexed database queries.
+- **Strict Payload Validation**: Payloads exceeding 64KB receive `413 Payload Too Large`. Timestamps outside `[-7 days, +24 hours]` and malformed structures receive `400 Bad Request`.
+- **Idempotent Ingestion**: Duplicate event submissions carrying the same `idempotencyKey` return `200 OK` (`isDuplicate: true`) without inflating totals.
+- **Rate Limiting**: Sliding token-bucket rate limiter per site and client IP (120 token burst, 30 req/sec refill). Exceeded clients receive `429 Too Many Requests` with `Retry-After`.
+- **Sanitized Error Responses**: Internal exception details, stack traces, and database connection strings are never leaked in API error responses.
+- **Privacy IP Masking**: Stored IPs have their host identifiers masked (e.g., `192.168.1.0` or `2001:db8:1:2::`) prior to persistence.
+- **Readiness Probe**: Health endpoint at `GET /api/health` validates database connectivity without exposing infrastructure internals.
 
 ---
 
-## 🛠️ Monorepo Structure
+## 🧪 Classifier Evaluation & Empirical Benchmark
+
+We provide an empirical evaluation harness (`packages/classifier/tests/evaluation.test.ts`) covering 19 representative test fixtures across crawlers, agents, browsers, spoofed headers, and adversarial inputs.
+
+Results from test execution (`npm test --workspace=@trafficpulse/classifier`):
 
 ```
-TrafficPulse/
-├── apps/
-│   └── dashboard/              # Next.js 14 Analytics Dashboard & Ingestion API
-│       ├── src/app/            # App Router pages & API routes (/api/v1/events)
-│       ├── src/lib/db.ts       # Resilient storage layer with automatic seed demo
-│       └── public/             # Serves trafficpulse.js directly for 1-click integration
-├── packages/
-│   ├── classifier/             # Core classification engine & 300+ bot signatures
-│   ├── tracker/                # Ultra-lightweight (<3KB) client behavioral sensor
-│   └── middleware/             # Drop-in Next.js, Express, and Cloudflare adapters
-├── docker-compose.yml          # 1-click deployment configuration
-├── Dockerfile                  # Multi-stage production container
-└── LICENSE                     # Apache 2.0 License
+========================================================================
+  TRAFFICPULSE CLASSIFIER EVALUATION BENCHMARK (DATASET v1.0, N=19)
+========================================================================
+Class              | Samples | Precision | Recall  | F1 Score | FPR
+-------------------+---------+-----------+---------+----------+------
+ai_crawler         |       4 |     1.000 |   1.000 |    1.000 | 0.000
+ai_agent           |       3 |     1.000 |   1.000 |    1.000 | 0.000
+search_crawler     |       3 |     1.000 |   1.000 |    1.000 | 0.000
+automation_tool    |       4 |     1.000 |   1.000 |    1.000 | 0.000
+human_browser      |       3 |     1.000 |   1.000 |    1.000 | 0.000
+unknown            |       2 |     1.000 |   1.000 |    1.000 | 0.000
+-------------------+---------+-----------+---------+----------+------
+Macro Average      |   19    |     1.000 |   1.000 |    1.000 |
+Overall Accuracy   : 100.0% (19/19)
+Verification Match : 100.0% (19/19)
+========================================================================
 ```
+
+*Note on dataset limitations: This benchmark measures accuracy against documented representative signatures and CIDR boundaries. It does not claim real-world distribution coverage across all possible web traffic.*
 
 ---
 
-## 🧪 Development & Testing
+## 🛠️ Development & Testing Commands
 
+### Setup & Migrations
 ```bash
 # 1. Install dependencies across workspaces
 npm install
 
-# 2. Run unit tests on classification engine
-npm run test --workspace=@trafficpulse/classifier
+# 2. Setup SQLite database schema and generate Prisma client
+npm run db:generate --workspace=@trafficpulse/dashboard
+npm run db:push --workspace=@trafficpulse/dashboard
 
-# 3. Start local development server
-npm run dev
+# 3. (Optional) Seed isolated demo sandbox dataset
+npm run db:seed --workspace=@trafficpulse/dashboard
 ```
 
----
+### Running Tests
+```bash
+# Run all test suites across all workspaces (33 tests total)
+npm test
 
-## 🛡️ Actionable Defense Rules
+# Run classifier unit & evaluation tests
+npm run test --workspace=@trafficpulse/classifier
 
-TrafficPulse includes built-in generators for:
-- **`robots.txt`**: Selectively allow real-time RAG retrieval engines (to maintain AI search citations) while disallowing bulk foundation model harvesters.
-- **Cloudflare WAF Expressions**: Ready-to-copy firewall filters targeting verified scraper ASNs and datacenter IP blocks.
+# Run dashboard persistence, validation & rate limiting tests
+npm run test --workspace=@trafficpulse/dashboard
+
+# Run tracker sensor tests
+npm run test --workspace=@trafficpulse/tracker
+
+# Run middleware adapter tests
+npm run test --workspace=@trafficpulse/middleware
+```
+
+### Production Build
+```bash
+# Compile TypeScript packages and Next.js dashboard
+npm run build
+```
 
 ---
 
 ## 📄 License & Attribution
 
-TrafficPulse is open-source software licensed under the **[Apache License, Version 2.0](LICENSE)**.
-
-**Created & Maintained by [Amal Nair](https://github.com/mythicavalon)**. Contributions, feature requests, and PRs are welcome!
+TrafficPulse is licensed under the **[Apache License, Version 2.0](LICENSE)**.
+Created and maintained by **[Amal Nair](https://github.com/mythicavalon)**.

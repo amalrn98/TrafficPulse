@@ -2,6 +2,7 @@ import { TrafficClassifier, ClassificationResult } from '@trafficpulse/classifie
 
 export interface NextMiddlewareOptions {
   siteId: string;
+  apiKey?: string;
   apiHost?: string;
   ignoredPaths?: string[];
   onClassified?: (req: Request, classification: ClassificationResult) => void | Response;
@@ -55,27 +56,29 @@ export function withTrafficPulse(options: NextMiddlewareOptions) {
 
     // Non-blocking asynchronous dispatch to TrafficPulse Ingestion API
     if (options.siteId && options.apiHost) {
+      const idempotencyKey = `mw_next_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       const payload = {
         siteId: options.siteId,
+        idempotencyKey,
         path: url.pathname,
         method: req.method,
-        trafficCategory: classification.category,
-        botIdentifier: classification.botIdentifier,
-        verifiedOrigin: classification.verifiedOrigin,
-        requestHeaders: {
-          userAgent: ua,
-          referer: req.headers.get('referer') || undefined,
-        },
-        clientHints: {
-          deviceType: /mobile|android|iphone/i.test(ua) ? 'mobile' : 'desktop',
-        },
+        userAgent: ua,
+        referer: req.headers.get('referer') || undefined,
         timestamp: new Date().toISOString(),
       };
 
       const ingestUrl = `${options.apiHost.replace(/\/$/, '')}/api/v1/events`;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'X-Idempotency-Key': idempotencyKey,
+      };
+      if (options.apiKey) {
+        headers['Authorization'] = `Bearer ${options.apiKey}`;
+      }
+
       fetch(ingestUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
         keepalive: true,
       }).catch(() => {});
