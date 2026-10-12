@@ -1,0 +1,29 @@
+name: Bug Report
+description: File a bug report or incorrect bot classification
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to report an issue in TrafficPulse!
+  - type: input
+    id: user_agent
+    attributes:
+      label: Target User-Agent or Bot
+      description: The User-Agent string or agent signature that caused the issue or misclassification.
+    validations:
+      required: false
+  - type: textarea
+    id: description
+    attributes:
+      label: Description of the Bug
+      description: A clear description of what happened vs what was expected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Provide instructions or telemetry payloads to reproduce the issue.
+    validations:
+      required: true
