@@ -1,0 +1,40 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Site {
+  id        String   @id @default(cuid())
+  name      String
+  domain    String   @unique
+  createdAt DateTime @default(now())
+  events    Event[]
+}
+
+model Event {
+  id              String   @id @default(cuid())
+  siteId          String
+  site            Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  timestamp       DateTime @default(now())
+  path            String
+  method          String   @default("GET")
+  trafficCategory String   // 'human' | 'llm_training' | 'ai_agent' | 'search_engine' | 'generic_bot'
+  botIdentifier   String?
+  actorFamily     String?
+  intent          String?
+  verifiedOrigin  Boolean  @default(false)
+  userAgent       String
+  ip              String?
+  referer         String?
+  statusCode      Int      @default(200)
+  durationMs      Int?
+  clientHints     String?  // JSON stringified telemetry
+
+  @@index([siteId, timestamp])
+  @@index([trafficCategory])
+  @@index([botIdentifier])
+}

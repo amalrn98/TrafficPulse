@@ -1,0 +1,26 @@
+{
+  "name": "@trafficpulse/middleware",
+  "version": "1.0.0",
+  "description": "Zero-latency Edge and Server middleware for Next.js, Express, and Cloudflare Workers",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@trafficpulse/classifier": "^1.0.0"
+  },
+  "keywords": [
+    "edge-middleware",
+    "nextjs-middleware",
+    "express-middleware",
+    "cloudflare-worker",
+    "agent-detection"
+  ],
+  "author": "Amal Nair",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^20.18.0",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "name": "trafficpulse",
+  "version": "1.0.0",
+  "description": "Production-grade, privacy-preserving web traffic analytics for the agentic era",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev": "npm run dev --workspace=apps/dashboard",
+    "lint": "npm run lint --workspaces --if-present"
+  },
+  "keywords": [
+    "ai-agents",
+    "traffic-analytics",
+    "agentic-ai",
+    "bot-detection",
+    "crawler-detection",
+    "rag",
+    "llm-scraping",
+    "privacy-first"
+  ],
+  "author": "Amal Nair",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^20.18.0",
+    "typescript": "^5.4.5"
+  }
+}

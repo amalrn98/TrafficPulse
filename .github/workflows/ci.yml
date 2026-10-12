@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Build Packages
+        run: |
+          npm run build --workspace=@trafficpulse/classifier
+          npm run build --workspace=@trafficpulse/tracker
+          npm run build --workspace=@trafficpulse/middleware
+
+      - name: Run Classifier Tests
+        run: npm run test --workspace=@trafficpulse/classifier
+
+      - name: Build Dashboard
+        run: npm run build --workspace=@trafficpulse/dashboard

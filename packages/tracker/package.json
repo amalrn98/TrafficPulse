@@ -1,0 +1,22 @@
+{
+  "name": "@trafficpulse/tracker",
+  "version": "1.0.0",
+  "description": "Ultra-lightweight (<3KB) privacy-first client telemetry and behavioral sensor for TrafficPulse",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [
+    "browser-tracker",
+    "behavioral-telemetry",
+    "agent-detection",
+    "bot-sensor"
+  ],
+  "author": "Amal Nair",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^20.18.0",
+    "typescript": "^5.4.5"
+  }
+}
