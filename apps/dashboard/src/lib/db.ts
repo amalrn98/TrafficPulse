@@ -51,7 +51,7 @@ class TrafficPulseStore {
   }
 
   public getOrCreateSite(domain: string, name?: string): SiteRecord {
-    for (const site of this.sites.values()) {
+    for (const site of Array.from(this.sites.values())) {
       if (site.domain === domain) return site;
     }
     const id = `site_${Math.random().toString(36).substring(2, 9)}`;

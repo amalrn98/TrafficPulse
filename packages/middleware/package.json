@@ -8,7 +8,7 @@
     "build": "tsc"
   },
   "dependencies": {
-    "@trafficpulse/classifier": "^1.0.0"
+    "@trafficpulse/classifier": "*"
   },
   "keywords": [
     "edge-middleware",
