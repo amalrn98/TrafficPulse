@@ -4,6 +4,9 @@ import { dbStore } from '@/lib/db';
 import { validateIngestPayload } from '@/lib/validation';
 import { ingestionRateLimiter } from '@/lib/rate-limit';
 import { extractClientIp, maskIpAddress } from '@/lib/ip-utils';
+import { logger } from '@/lib/logger';
+import { metricsRegistry } from '@/lib/metrics';
+import { randomUUID } from 'crypto';
 
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB limit
 
@@ -27,7 +30,7 @@ function buildCorsHeaders(origin: string | null, siteDomain?: string) {
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Api-Key, X-Idempotency-Key',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Api-Key, X-Idempotency-Key, X-Request-Id',
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -41,12 +44,24 @@ export async function OPTIONS(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const startTime = performance.now();
+  const requestId = req.headers.get('x-request-id') || randomUUID();
   const origin = req.headers.get('origin');
-  const corsHeaders = buildCorsHeaders(origin);
+  const baseCorsHeaders = buildCorsHeaders(origin);
+  const corsHeaders = {
+    ...baseCorsHeaders,
+    'X-Request-Id': requestId,
+  };
 
   // 1. Enforce payload size limit
   const contentLength = req.headers.get('content-length');
   if (contentLength && parseInt(contentLength, 10) > MAX_PAYLOAD_BYTES) {
+    metricsRegistry.recordIngestRejection('payload_too_large');
+    logger.warn('Event rejected: payload too large', {
+      requestId,
+      contentLength,
+      maxBytes: MAX_PAYLOAD_BYTES,
+    });
     return NextResponse.json(
       { error: 'Payload Too Large', code: 'PAYLOAD_TOO_LARGE', maxBytes: MAX_PAYLOAD_BYTES },
       { status: 413, headers: corsHeaders }
@@ -58,6 +73,8 @@ export async function POST(req: NextRequest) {
   try {
     rawBody = await req.json();
   } catch {
+    metricsRegistry.recordIngestRejection('invalid_json');
+    logger.warn('Event rejected: invalid JSON body', { requestId });
     return NextResponse.json(
       { error: 'Bad Request', code: 'INVALID_JSON', message: 'Request body must be valid JSON' },
       { status: 400, headers: corsHeaders }
@@ -72,6 +89,12 @@ export async function POST(req: NextRequest) {
   );
 
   if (validation.error || !validation.data) {
+    metricsRegistry.recordIngestRejection('validation_failed');
+    logger.warn('Event rejected: schema validation failure', {
+      requestId,
+      field: validation.error?.field,
+      error: validation.error?.message,
+    });
     return NextResponse.json(
       {
         error: 'Validation Error',
@@ -91,6 +114,12 @@ export async function POST(req: NextRequest) {
   const rateLimitRes = await ingestionRateLimiter.check(rateLimitKey);
 
   if (!rateLimitRes.allowed) {
+    metricsRegistry.recordIngestRejection('rate_limit_exceeded');
+    logger.warn('Event rejected: rate limit exceeded', {
+      requestId,
+      siteId: payload.siteId,
+      clientIp,
+    });
     return NextResponse.json(
       {
         error: 'Too Many Requests',
@@ -124,6 +153,11 @@ export async function POST(req: NextRequest) {
     }
 
     if (!site) {
+      metricsRegistry.recordIngestRejection('unauthorized');
+      logger.warn('Event rejected: unknown or unregistered site', {
+        requestId,
+        siteId: payload.siteId,
+      });
       return NextResponse.json(
         {
           error: 'Unauthorized',
@@ -141,7 +175,7 @@ export async function POST(req: NextRequest) {
     });
 
     // 7. Authoritative Server-Side Classification
-    // NOTE: Client claims are untrusted. Classification is computed strictly from verified evidence.
+    const classStart = performance.now();
     const classification = TrafficClassifier.classify({
       userAgent: payload.userAgent,
       ip: clientIp || undefined,
@@ -150,6 +184,8 @@ export async function POST(req: NextRequest) {
       headers: headerRecord,
       clientSignals: payload.clientSignals,
     });
+    const classDuration = performance.now() - classStart;
+    metricsRegistry.recordClassificationLatencyMs(classDuration);
 
     // 8. Privacy-Preserving IP Masking before persistence
     const maskedIp = maskIpAddress(clientIp);
@@ -159,6 +195,7 @@ export async function POST(req: NextRequest) {
       payload.idempotencyKey || req.headers.get('x-idempotency-key') || undefined;
 
     // 9. Persistent Storage Operation
+    const dbStart = performance.now();
     const { event, isDuplicate } = await dbStore.recordEvent({
       siteId: site.id,
       idempotencyKey,
@@ -184,6 +221,23 @@ export async function POST(req: NextRequest) {
       clientHints: payload.clientSignals,
       isDemo: site.isDemo,
     });
+    const dbDuration = performance.now() - dbStart;
+    metricsRegistry.recordDbLatencyMs(dbDuration);
+
+    metricsRegistry.recordIngestRequest(
+      isDuplicate ? 'duplicate' : 'success',
+      classification.actorType
+    );
+
+    const totalDuration = performance.now() - startTime;
+    logger.info('Event ingested successfully', {
+      requestId,
+      siteId: site.id,
+      actorType: classification.actorType,
+      verificationStatus: classification.verificationStatus,
+      isDuplicate,
+      durationMs: Math.round(totalDuration * 100) / 100,
+    });
 
     return NextResponse.json(
       {
@@ -201,8 +255,11 @@ export async function POST(req: NextRequest) {
       }
     );
   } catch (err: unknown) {
-    // Sanitize internal errors - never leak database credentials, stack traces, or SQL errors to client
-    console.error('Ingestion pipeline error:', err instanceof Error ? err.message : String(err));
+    metricsRegistry.recordIngestRejection('internal_error');
+    logger.error('Ingestion pipeline error', {
+      requestId,
+      error: err instanceof Error ? err.message : String(err),
+    });
 
     return NextResponse.json(
       {

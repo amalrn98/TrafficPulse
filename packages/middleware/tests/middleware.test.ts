@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { withTrafficPulse } from '../src/nextjs';
 import { createTrafficPulseMiddleware } from '../src/express';
 import { trafficPulseWorker } from '../src/cloudflare';
+import { dispatchEventWithRetry } from '../src/dispatch';
 
 test('Next.js Middleware - Classifies requests and triggers hook', async () => {
   let classifiedResult: any = null;
@@ -97,4 +98,73 @@ test('Cloudflare Worker Wrapper - Executes fetch handler with headers and classi
   assert.strictEqual(res.headers.get('X-TrafficPulse-ActorType'), 'ai_agent');
   assert.strictEqual(res.headers.get('X-TrafficPulse-Verification'), 'verified');
   assert.strictEqual(res.headers.get('X-TrafficPulse-Bot'), 'PerplexityBot');
+});
+
+test('Resilience - Next.js Middleware fails open when ingestion backend is offline', async () => {
+  const mw = withTrafficPulse({
+    siteId: 'site_offline_01',
+    apiHost: 'http://127.0.0.1:59999', // Non-existent offline port
+    timeoutMs: 100,
+    maxRetries: 1,
+  });
+
+  const req = new Request('https://example.com/checkout');
+  // Must execute without throwing and return undefined to allow Next.js routing to proceed
+  const res = await mw(req);
+  assert.strictEqual(res, undefined);
+});
+
+test('Resilience - Next.js Middleware fails open when onClassified hook throws', async () => {
+  const mw = withTrafficPulse({
+    siteId: 'site_throw_01',
+    onClassified: () => {
+      throw new Error('Unexpected crash in user hook');
+    },
+  });
+
+  const req = new Request('https://example.com/products');
+  const res = await mw(req);
+  // Must not throw or return a 500 Response: request is allowed through
+  assert.strictEqual(res, undefined);
+});
+
+test('Resilience - Express Middleware fails open when backend is offline or hook throws', () => {
+  const mw = createTrafficPulseMiddleware({
+    siteId: 'site_exp_fail',
+    apiHost: 'http://127.0.0.1:59999',
+    timeoutMs: 100,
+    maxRetries: 1,
+    onClassified: () => {
+      throw new Error('Hook failure');
+    },
+  });
+
+  const req: any = {
+    method: 'GET',
+    url: '/home',
+    headers: {},
+  };
+  const res: any = {
+    setHeader: () => {},
+  };
+
+  let nextCalled = false;
+  mw(req, res, () => {
+    nextCalled = true;
+  });
+
+  assert.strictEqual(nextCalled, true, 'next() must be called even on failure');
+});
+
+test('Resilience - Dispatch utility terminates cleanly on network connection refusal', async () => {
+  let completed = false;
+  await dispatchEventWithRetry({
+    apiHost: 'http://127.0.0.1:59999',
+    siteId: 'test_site',
+    payload: { idempotencyKey: 'mw_test_retry' },
+    timeoutMs: 50,
+    maxRetries: 1,
+  });
+  completed = true;
+  assert.strictEqual(completed, true, 'Dispatch utility must resolve without throwing');
 });

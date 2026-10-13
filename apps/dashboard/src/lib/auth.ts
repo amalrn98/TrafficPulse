@@ -35,3 +35,38 @@ export function verifyAdminAuth(req: NextRequest): { authorized: boolean; error?
 
   return { authorized: true };
 }
+
+/**
+ * Validates metrics access via METRICS_AUTH_TOKEN or ADMIN_API_KEY.
+ * Allows unauthenticated access only if METRICS_PUBLIC === 'true' or in local development.
+ */
+export function verifyMetricsAuth(req: NextRequest): { authorized: boolean; error?: string } {
+  if (process.env.METRICS_PUBLIC === 'true') {
+    return { authorized: true };
+  }
+
+  const metricsToken = process.env.METRICS_AUTH_TOKEN || process.env.ADMIN_API_KEY;
+
+  if (!metricsToken) {
+    if (process.env.NODE_ENV === 'production') {
+      return { authorized: false, error: 'METRICS_AUTH_TOKEN or ADMIN_API_KEY must be configured in production' };
+    }
+    return { authorized: true };
+  }
+
+  const authHeader = req.headers.get('authorization') || '';
+  const xMetricsToken = req.headers.get('x-metrics-token') || req.headers.get('x-admin-key') || '';
+
+  let candidate = '';
+  if (authHeader.startsWith('Bearer ')) {
+    candidate = authHeader.substring(7).trim();
+  } else if (xMetricsToken) {
+    candidate = xMetricsToken.trim();
+  }
+
+  if (!candidate || candidate !== metricsToken) {
+    return { authorized: false, error: 'Unauthorized: Invalid or missing metrics token' };
+  }
+
+  return { authorized: true };
+}
