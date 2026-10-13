@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trafficpulse-dashboard
+  namespace: trafficpulse
+  labels:
+    app: trafficpulse
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: trafficpulse
+  template:
+    metadata:
+      labels:
+        app: trafficpulse
+    spec:
+      containers:
+        - name: trafficpulse
+          image: ghcr.io/amalrn98/trafficpulse:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - secretRef:
+                name: trafficpulse-env
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1024Mi
+          livenessProbe:
+            httpGet:
+              path: /api/health/liveness
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trafficpulse-service
+  namespace: trafficpulse
+spec:
+  selector:
+    app: trafficpulse
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000
+  type: ClusterIP
