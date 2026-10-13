@@ -126,3 +126,4 @@ class MetricsRegistry {
 
 // Global singleton for the process
 export const metricsRegistry = new MetricsRegistry();
+

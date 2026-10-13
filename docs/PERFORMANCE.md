@@ -79,3 +79,4 @@ The edge middleware adapters (`packages/middleware`) are designed for near-zero 
 1. Next.js and Cloudflare Worker middleware evaluate classification locally in under 0.05 ms.
 2. Ingestion telemetry is dispatched asynchronously using fire-and-forget background promises (`ctx.waitUntil` on Cloudflare or un-awaited `fetch` on Next.js/Express).
 3. Adapters strictly fail-open: network timeouts (3,000 ms) and connection refusals are caught silently and never delay the downstream origin response.
+

@@ -12,3 +12,4 @@ services:
       - DATABASE_URL=file:./dev.db
     volumes:
       - ./apps/dashboard/prisma:/app/apps/dashboard/prisma
+

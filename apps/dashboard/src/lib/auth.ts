@@ -70,3 +70,4 @@ export function verifyMetricsAuth(req: NextRequest): { authorized: boolean; erro
 
   return { authorized: true };
 }
+

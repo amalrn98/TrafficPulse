@@ -59,3 +59,4 @@ test('Metrics Auth - Verifies metrics endpoint access control', () => {
     process.env.METRICS_AUTH_TOKEN = origToken;
   }
 });
+

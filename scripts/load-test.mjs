@@ -139,3 +139,4 @@ main().catch((err) => {
   console.error('Load test aborted:', err);
   process.exit(1);
 });
+
