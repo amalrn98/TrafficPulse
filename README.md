@@ -159,7 +159,7 @@ export default {
 - **Rate Limiting**: Sliding token-bucket rate limiter per site and client IP (120 token burst, 30 req/sec refill). Exceeded clients receive `429 Too Many Requests` with `Retry-After`.
 - **Sanitized Error Responses**: Internal exception details, stack traces, and database connection strings are never leaked in API error responses.
 - **Privacy IP Masking**: Stored IPs have their host identifiers masked (e.g., `192.168.1.0` or `2001:db8:1:2::`) prior to persistence.
-- **Readiness Probe**: Health endpoint at `GET /api/health` validates database connectivity without exposing infrastructure internals.
+- **Health & Probes**: Readiness probe at `GET /api/health` validates database connectivity. DB-independent liveness probe at `GET /api/health/liveness` enables zero-downtime Kubernetes and container orchestrator restarts.
 
 ---
 
@@ -203,7 +203,7 @@ npm run db:seed --workspace=@trafficpulse/dashboard
 
 ### Running Tests
 ```bash
-# Run all test suites across all workspaces (33 tests total)
+# Run all test suites across all workspaces (45 tests total)
 npm test
 
 # Run classifier unit & evaluation tests
@@ -227,7 +227,19 @@ npm run build
 
 ---
 
+## 📚 Documentation & Architecture
+
+- **[System Architecture](docs/ARCHITECTURE.md)**: Monorepo layout, request flow, and state boundaries.
+- **[Privacy Documentation](docs/PRIVACY.md)**: Data inventory, IP masking, retention policies, and opt-out controls.
+- **[Performance & Benchmarks](docs/PERFORMANCE.md)**: Latency budgets, fail-open mechanisms, and load testing.
+- **[Threat Model](docs/THREAT_MODEL.md)**: STRIDE analysis, trust boundaries, and mitigation controls.
+- **[Evaluation Methodology](docs/EVALUATION.md)**: Regression suite fixture provenance and heuristic confidence limits.
+- **[Project Roadmap](docs/ROADMAP.md)**: Production readiness phases and feature timeline.
+- **[Integration Examples](examples/)**: Runnable samples for Next.js, Express.js, and Cloudflare Workers.
+
+---
+
 ## 📄 License & Attribution
 
 TrafficPulse is licensed under the **[Apache License, Version 2.0](LICENSE)**.
-Created and maintained by **[Amal Nair](https://github.com/mythicavalon)**.
+Created and maintained by **[Amal Nair](https://github.com/amalrn98)** (@mythicavalon on Discord).
