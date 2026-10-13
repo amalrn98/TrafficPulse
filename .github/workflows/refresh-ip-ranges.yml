@@ -35,7 +35,7 @@ jobs:
 
       - name: Open pull request if CIDRs changed
         if: steps.changes.outputs.changed == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: 'chore(data): refresh vendor IP/CIDR ranges'
           title: 'chore: refresh vendor IP/CIDR ranges'
