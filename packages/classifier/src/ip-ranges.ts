@@ -1,8 +1,12 @@
 import { ActorFamily } from './types';
 
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+
 /**
  * CIDR blocks and IP ranges for major crawler and AI organizations.
- * Provenance: Published official documentation, ASNs, and bot IP lists.
+ * Data is loaded from packages/classifier/data/ip-ranges.json.
+ * Refresh the data file with: node scripts/refresh-ip-ranges.mjs
  */
 export interface ProviderRangeInfo {
   actorFamily: ActorFamily;
@@ -12,68 +16,89 @@ export interface ProviderRangeInfo {
   lastUpdated: string;
 }
 
-export const VERIFIED_NETWORKS: Record<string, ProviderRangeInfo> = {
-  OpenAI: {
-    actorFamily: 'OpenAI',
-    organization: 'OpenAI, LLC',
-    cidrs: [
-      '20.15.240.0/20',
-      '20.171.206.0/23',
-      '40.83.2.0/24',
-      '52.230.152.0/24',
-      '13.107.246.0/24',
-      '2603:1030:206::/48',
-    ],
-    source: 'https://openai.com/gptbot.json',
-    lastUpdated: '2026-03-01',
-  },
-  Anthropic: {
-    actorFamily: 'Anthropic',
-    organization: 'Anthropic PBC',
-    cidrs: [
-      '160.79.104.0/23',
-      '2607:6bc0::/32',
-    ],
-    source: 'https://www.anthropic.com/claudebot.json',
-    lastUpdated: '2026-03-01',
-  },
-  Google: {
-    actorFamily: 'Google',
-    organization: 'Google LLC',
-    cidrs: [
-      '66.249.64.0/19',
-      '64.233.160.0/19',
-      '72.14.192.0/18',
-      '209.85.128.0/17',
-      '2001:4860:4801::/48',
-    ],
-    source: 'https://developers.google.com/search/apis/ipranges/googlebot.json',
-    lastUpdated: '2026-03-01',
-  },
-  Microsoft: {
-    actorFamily: 'Microsoft',
-    organization: 'Microsoft Corporation',
-    cidrs: [
-      '40.77.167.0/24',
-      '157.55.39.0/24',
-      '207.46.13.0/24',
-      '13.66.139.0/24',
-      '2a01:111:2006::/48',
-    ],
-    source: 'https://www.bing.com/toolbox/bingbot.json',
-    lastUpdated: '2026-03-01',
-  },
-  Perplexity: {
-    actorFamily: 'Perplexity',
-    organization: 'Perplexity AI, Inc.',
-    cidrs: [
-      '198.181.160.0/20',
-      '108.165.184.0/21',
-    ],
-    source: 'Perplexity published ASN / IP blocks',
-    lastUpdated: '2026-03-01',
-  },
-};
+interface IpRangeDataFile {
+  schemaVersion: string;
+  vendors: Record<string, {
+    actorFamily: string;
+    organization: string;
+    cidrs: string[];
+    sourceUrl: string;
+    fetchedAt: string;
+    notes?: string;
+  }>;
+}
+
+function loadVerifiedNetworks(): Record<string, ProviderRangeInfo> {
+  const candidatePaths = [
+    join(__dirname, '..', '..', 'data', 'ip-ranges.json'),
+    join(__dirname, '..', 'data', 'ip-ranges.json'),
+    join(process.cwd(), 'packages', 'classifier', 'data', 'ip-ranges.json'),
+    join(process.cwd(), 'data', 'ip-ranges.json'),
+  ];
+
+  for (const p of candidatePaths) {
+    if (existsSync(p)) {
+      try {
+        const raw = readFileSync(p, 'utf-8');
+        const data: IpRangeDataFile = JSON.parse(raw);
+        const result: Record<string, ProviderRangeInfo> = {};
+        for (const [key, vendor] of Object.entries(data.vendors)) {
+          result[key] = {
+            actorFamily: vendor.actorFamily as ActorFamily,
+            organization: vendor.organization,
+            cidrs: vendor.cidrs,
+            source: vendor.sourceUrl,
+            lastUpdated: vendor.fetchedAt,
+          };
+        }
+        return result;
+      } catch {
+        // Continue fallback search
+      }
+    }
+  }
+
+  // Fallback defaults to guarantee stability
+  return {
+    OpenAI: {
+      actorFamily: 'OpenAI',
+      organization: 'OpenAI, LLC',
+      cidrs: ['20.15.240.0/20', '20.171.206.0/23', '40.83.2.0/24', '52.230.152.0/24', '13.107.246.0/24', '2603:1030:206::/48'],
+      source: 'https://openai.com/gptbot.json',
+      lastUpdated: '2026-03-01',
+    },
+    Anthropic: {
+      actorFamily: 'Anthropic',
+      organization: 'Anthropic PBC',
+      cidrs: ['160.79.104.0/23', '2607:6bc0::/32'],
+      source: 'https://www.anthropic.com/claudebot.json',
+      lastUpdated: '2026-03-01',
+    },
+    Google: {
+      actorFamily: 'Google',
+      organization: 'Google LLC',
+      cidrs: ['66.249.64.0/19', '64.233.160.0/19', '72.14.192.0/18', '209.85.128.0/17', '2001:4860:4801::/48'],
+      source: 'https://developers.google.com/search/apis/ipranges/googlebot.json',
+      lastUpdated: '2026-03-01',
+    },
+    Microsoft: {
+      actorFamily: 'Microsoft',
+      organization: 'Microsoft Corporation',
+      cidrs: ['40.77.167.0/24', '157.55.39.0/24', '207.46.13.0/24', '13.66.139.0/24', '2a01:111:2006::/48'],
+      source: 'https://www.bing.com/toolbox/bingbot.json',
+      lastUpdated: '2026-03-01',
+    },
+    Perplexity: {
+      actorFamily: 'Perplexity',
+      organization: 'Perplexity AI, Inc.',
+      cidrs: ['198.181.160.0/20', '108.165.184.0/21'],
+      source: 'https://www.perplexity.ai/perplexitybot.json',
+      lastUpdated: '2026-03-01',
+    },
+  };
+}
+
+export const VERIFIED_NETWORKS: Record<string, ProviderRangeInfo> = loadVerifiedNetworks();
 
 /**
  * Parses an IPv4 string into a 32-bit unsigned integer.

@@ -9,6 +9,14 @@ export interface TrackerConfig {
   apiHost?: string;
   autoTrack?: boolean;
   respectDnt?: boolean;
+  /**
+   * Set to true to enable behavioral signal collection (mouse entropy, scroll entropy, WebGL renderer).
+   * Default: false (opt-in required for GDPR/ePrivacy compliance).
+   */
+  enableBehavior?: boolean;
+  /**
+   * @deprecated Use enableBehavior instead. disableBiometrics=false is equivalent to enableBehavior=true.
+   */
   disableBiometrics?: boolean;
 }
 
@@ -72,7 +80,7 @@ export class TrafficPulseTracker {
   }
 
   /**
-   * Checks whether the user has opted out via Do Not Track (DNT) or explicit opt-out preference.
+   * Checks whether the user has opted out via Do Not Track (DNT), GPC, or explicit opt-out preference.
    */
   public isOptedOut(): boolean {
     if (typeof window === 'undefined') return true;
@@ -86,11 +94,16 @@ export class TrafficPulseTracker {
       // Storage access blocked by browser privacy policy
     }
 
-    // Check Do Not Track if configured or enabled
+    // Check Do Not Track and Global Privacy Control if configured
     if (this.config.respectDnt !== false) {
       const nav = window.navigator as any;
       const win = window as any;
+      // Do Not Track
       if (nav.doNotTrack === '1' || win.doNotTrack === '1' || nav.msDoNotTrack === '1') {
+        return true;
+      }
+      // Global Privacy Control (GPC)
+      if (nav.globalPrivacyControl === true) {
         return true;
       }
     }
@@ -125,6 +138,12 @@ export class TrafficPulseTracker {
     }
   }
 
+  private isBehaviorEnabled(): boolean {
+    if (this.config.enableBehavior === true) return true;
+    if (this.config.enableBehavior === undefined && this.config.disableBiometrics === false) return true;
+    return false;
+  }
+
   private parseScriptAttributes(): TrackerConfig {
     if (typeof document === 'undefined') {
       return { siteId: '' };
@@ -133,12 +152,16 @@ export class TrafficPulseTracker {
       (document.currentScript as HTMLScriptElement) ||
       (typeof document.querySelector === 'function' ? document.querySelector('script[data-site-id]') : null);
 
+    const disableBiometrics = currentScript?.getAttribute('data-disable-biometrics');
+    const enableBehavior = currentScript?.getAttribute('data-enable-behavior');
+
     return {
       siteId: currentScript?.getAttribute('data-site-id') || '',
       apiHost: currentScript?.getAttribute('data-api-host') || '',
       autoTrack: currentScript?.getAttribute('data-auto-track') !== 'false',
       respectDnt: currentScript?.getAttribute('data-respect-dnt') !== 'false',
-      disableBiometrics: currentScript?.getAttribute('data-disable-biometrics') === 'true',
+      enableBehavior: enableBehavior === 'true' || disableBiometrics === 'false',
+      disableBiometrics: disableBiometrics === 'true' || enableBehavior === 'false',
     };
   }
 
@@ -150,8 +173,8 @@ export class TrafficPulseTracker {
   private initListeners(): void {
     if (typeof window === 'undefined') return;
 
-    // Interaction listeners (only if biometrics are not disabled)
-    if (!this.config.disableBiometrics) {
+    // Interaction listeners (only if behavior is enabled)
+    if (this.isBehaviorEnabled()) {
       // Mouse movement (throttled to 20 samples maximum)
       const mouseHandler = (e: Event) => {
         const me = e as MouseEvent;
@@ -283,6 +306,7 @@ export class TrafficPulseTracker {
     const hasChromeObject = !!(win as any).chrome;
     const hasPlugins = !!(nav.plugins && nav.plugins.length > 0);
     const screenConsistency = scr.width > 0 && scr.height > 0 && scr.colorDepth > 0;
+    const behaviorEnabled = this.isBehaviorEnabled();
 
     return {
       siteId: this.config.siteId,
@@ -296,9 +320,9 @@ export class TrafficPulseTracker {
         hasChromeObject,
         hasPlugins,
         screenConsistency,
-        webglRenderer: this.getWebGLRenderer(),
-        mouseEntropy: this.config.disableBiometrics ? undefined : this.calculateMouseEntropy(),
-        scrollEntropy: this.config.disableBiometrics ? undefined : (this.scrollDeltas.length > 0 ? 1 : 0),
+        webglRenderer: behaviorEnabled ? this.getWebGLRenderer() : undefined,
+        mouseEntropy: behaviorEnabled ? this.calculateMouseEntropy() : undefined,
+        scrollEntropy: behaviorEnabled ? (this.scrollDeltas.length > 0 ? 1 : 0) : undefined,
         interactionCount: this.interactionCount,
         dwellTimeMs: Date.now() - this.startTime,
         viewportWidth: win.innerWidth || 0,

@@ -66,35 +66,47 @@ test('Tracker - Collects structured telemetry payload with idempotency key', () 
   }
 });
 
-test('Tracker - Omits biometrics when disableBiometrics is enabled', () => {
+test('Tracker - Behavioral signals are NOT collected by default (opt-in required)', () => {
+  const tracker = new TrafficPulseTracker({ siteId: 'test-site', autoTrack: false });
+  const signals = tracker.collectSignals();
+  assert.strictEqual(signals.clientSignals.mouseEntropy, undefined, 'mouseEntropy should not be collected by default');
+  assert.strictEqual(signals.clientSignals.scrollEntropy, undefined, 'scrollEntropy should not be collected by default');
+  assert.strictEqual(signals.clientSignals.webglRenderer, undefined, 'webglRenderer should not be collected by default');
+  tracker.teardown();
+});
+
+test('Tracker - Behavioral signals are collected when enableBehavior=true', () => {
+  const tracker = new TrafficPulseTracker({ siteId: 'test-site', enableBehavior: true, autoTrack: false });
+  const signals = tracker.collectSignals();
+  assert.ok(signals.clientSignals.mouseEntropy !== undefined, 'mouseEntropy should be defined when enableBehavior=true');
+  tracker.teardown();
+});
+
+test('Tracker - Legacy disableBiometrics=false alias enables behavioral signals', () => {
+  const tracker = new TrafficPulseTracker({ siteId: 'test-site', disableBiometrics: false, autoTrack: false });
+  const signals = tracker.collectSignals();
+  assert.ok(signals.clientSignals.mouseEntropy !== undefined, 'legacy disableBiometrics=false should enable biometrics');
+  tracker.teardown();
+});
+
+test('Tracker - Honors Global Privacy Control (GPC) opt-out', () => {
   (global as any).window = {
-    navigator: { userAgent: 'Mozilla/5.0 PrivacyBrowser/1.0' },
-    screen: { width: 1024, height: 768, colorDepth: 24 },
+    navigator: { userAgent: 'Mozilla/5.0 TestBrowser/1.0', globalPrivacyControl: true },
+    screen: { width: 1920, height: 1080, colorDepth: 24 },
     addEventListener: () => {},
     removeEventListener: () => {},
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
   };
-  (global as any).document = {
-    addEventListener: () => {},
-    removeEventListener: () => {},
-  };
-  (global as any).location = { pathname: '/' };
+  (global as any).document = { addEventListener: () => {}, removeEventListener: () => {} };
 
   try {
-    const tracker = new TrafficPulseTracker({
-      siteId: 'site_privacy_01',
-      autoTrack: false,
-      respectDnt: false,
-      disableBiometrics: true,
-    });
-
-    const payload = tracker.collectSignals();
-    assert.strictEqual(payload.clientSignals.mouseEntropy, undefined);
-    assert.strictEqual(payload.clientSignals.scrollEntropy, undefined);
-
+    const tracker = new TrafficPulseTracker({ siteId: 'site_gpc_01', autoTrack: false, respectDnt: true });
+    assert.strictEqual(tracker.isOptedOut(), true, 'Tracker must be opted out when globalPrivacyControl is true');
+    tracker.flush(); // verify no exception
     tracker.teardown();
   } finally {
     delete (global as any).window;
     delete (global as any).document;
-    delete (global as any).location;
   }
 });
+

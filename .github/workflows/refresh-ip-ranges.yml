@@ -1,0 +1,46 @@
+name: Refresh IP Ranges
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run CIDR refresh script
+        run: node scripts/refresh-ip-ranges.mjs
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet packages/classifier/data/ip-ranges.json; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Open pull request if CIDRs changed
+        if: steps.changes.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: 'chore(data): refresh vendor IP/CIDR ranges'
+          title: 'chore: refresh vendor IP/CIDR ranges'
+          body: |
+            Automated monthly CIDR refresh.
+            Review changes in `packages/classifier/data/ip-ranges.json` before merging.
+          branch: 'chore/refresh-ip-ranges'
+          labels: 'data-update'

@@ -104,6 +104,24 @@ export class TrafficClassifier {
         if (meta.clientSignals && (meta.clientSignals.mouseEntropy || 0) > 1.2) {
           evidence.push('conflicting_human_biometrics_on_bot_ua');
           reasonCodes.push(REASON_CODES.CONFLICTING_SIGNALS);
+          return {
+            actorType: 'unknown',
+            actorName: 'Conflicting-Evidence',
+            activityType: 'unknown',
+            verificationStatus: 'unknown',
+            confidence: 0.40,
+            confidenceType: 'heuristic',
+            evidence,
+            reasonCodes,
+            classifierVersion: CLASSIFIER_VERSION,
+            classifiedAt: nowIso,
+            category: 'generic_bot',
+            botIdentifier: 'Conflicting-Evidence',
+            actorFamily: 'Unknown',
+            intent: 'unknown',
+            verifiedOrigin: false,
+            signals: evidence,
+          };
         }
 
         return {

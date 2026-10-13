@@ -94,11 +94,11 @@ test('TrafficClassifier - Adversarial Conflict: Bot Signature with Fabricated Hu
     },
   });
 
-  // Authoritative bot rule must NOT be overridden by client telemetry
-  assert.strictEqual(adversarial.category, 'llm_training');
-  assert.strictEqual(adversarial.actorType, 'ai_crawler');
-  assert.strictEqual(adversarial.botIdentifier, 'ClaudeBot');
+  // When bot UA conflicts with human entropy, classification falls back to unknown
+  assert.strictEqual(adversarial.actorType, 'unknown');
+  assert.strictEqual(adversarial.verificationStatus, 'unknown');
   assert.ok(adversarial.reasonCodes.includes(REASON_CODES.CONFLICTING_SIGNALS));
+  assert.ok(adversarial.confidence <= 0.40);
 });
 
 test('TrafficClassifier - Organic Browsers: Claimed vs Inferred Human Biometrics', () => {
@@ -218,3 +218,50 @@ test('TrafficClassifier - Deterministic Output Guarantee', () => {
   assert.strictEqual(res1.verificationStatus, res2.verificationStatus);
   assert.deepStrictEqual(res1.reasonCodes, res2.reasonCodes);
 });
+
+test('IP Range - CIDR Edge Cases: /0, /32 exact host, mismatched family', () => {
+  // /0 matches everything
+  assert.strictEqual(isIpInCidr('1.2.3.4', '0.0.0.0/0'), true);
+  assert.strictEqual(isIpInCidr('255.255.255.255', '0.0.0.0/0'), true);
+
+  // /32 exact host match
+  assert.strictEqual(isIpInCidr('10.0.0.1', '10.0.0.1/32'), true);
+  assert.strictEqual(isIpInCidr('10.0.0.2', '10.0.0.1/32'), false);
+
+  // Mixed IP family should not match
+  assert.strictEqual(isIpInCidr('192.168.1.1', '2001:db8::/32'), false);
+  assert.strictEqual(isIpInCidr('2001:db8::1', '192.168.1.0/24'), false);
+
+  // IPv6 /128 exact match
+  assert.strictEqual(isIpInCidr('2001:db8::1', '2001:db8::1/128'), true);
+  assert.strictEqual(isIpInCidr('2001:db8::2', '2001:db8::1/128'), false);
+
+  // IPv6 /0 matches all
+  assert.strictEqual(isIpInCidr('::1', '::/0'), true);
+  assert.strictEqual(isIpInCidr('2001:db8::1', '::/0'), true);
+});
+
+test('Confidence Caps: evidence tier enforces maximum confidence', () => {
+  // CIDR-verified: max 0.95
+  const verified = TrafficClassifier.classify({
+    userAgent: 'Mozilla/5.0 AppleWebKit/537.36 (compatible; GPTBot/1.2; +https://openai.com/gptbot)',
+    ip: '20.15.240.10',
+  });
+  assert.ok(verified.confidence <= 0.95, `CIDR-verified confidence ${verified.confidence} exceeds 0.95 cap`);
+  assert.ok(verified.confidence > 0.90, 'CIDR-verified confidence should be high (>0.90)');
+
+  // Signature without CIDR: max 0.75
+  const claimed = TrafficClassifier.classify({
+    userAgent: 'python-requests/2.31.0',
+  });
+  assert.ok(claimed.confidence <= 0.75, `Claimed-only confidence ${claimed.confidence} exceeds 0.75 cap`);
+
+  // Conflicting signals: should have low confidence (<=0.40)
+  const conflicting = TrafficClassifier.classify({
+    userAgent: 'Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)',
+    clientSignals: { mouseEntropy: 2.4, interactionCount: 15 },
+  });
+  assert.ok(conflicting.confidence <= 0.40, `Conflicting signals confidence ${conflicting.confidence} exceeds 0.40 cap`);
+  assert.strictEqual(conflicting.actorType, 'unknown');
+});
+

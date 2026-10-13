@@ -90,9 +90,10 @@ Paste into your `<head>` tag. Tested bundle size: **5.4 KB uncompressed, ~1.8 KB
 ```
 
 #### Sensor Features & Privacy Controls
-- **Do Not Track (DNT)**: Enabled by default (`data-respect-dnt="true"`). Respects `navigator.doNotTrack`.
+- **Do Not Track (DNT) & GPC**: Enabled by default (`data-respect-dnt="true"`). Respects `navigator.doNotTrack` and `navigator.globalPrivacyControl`.
 - **Explicit Opt-out**: `window.TrafficPulse.optOut()` sets localStorage flag and terminates tracking.
-- **Biometric Disabling**: Add `data-disable-biometrics="true"` to prevent mouse and scroll entropy calculation.
+- **Behavioral Signal Opt-In**: Add `data-enable-behavior="true"` to enable mouse entropy, scroll entropy, and WebGL renderer collection. Behavioral signals are disabled by default and require opt-in due to GDPR/ePrivacy considerations.
+- **Legacy Alias**: `data-disable-biometrics="false"` is equivalent to `data-enable-behavior="true"` for backward compatibility. The `disableBiometrics` option is deprecated.
 - **Deduplication**: Generates an idempotency key (`tp_<timestamp>_<random>`) per page view. Prevents double-counting when `visibilitychange` and `pagehide` both fire.
 
 ### Option 2: Next.js Edge Middleware
