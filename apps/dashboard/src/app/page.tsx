@@ -634,13 +634,13 @@ export default function DashboardPage() {
                         </span>
                       </td>
                       <td className="py-2.5 px-3 text-slate-300 font-semibold whitespace-nowrap">
-                        {evt.actorName || evt.botIdentifier || '—'}
+                        {evt.actorName || evt.botIdentifier || '-'}
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap">
                         {getVerificationBadge(evt.verificationStatus, evt.verifiedOrigin)}
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap text-slate-400" title="Heuristic confidence score based on available evidence">
-                        {evt.confidence ? `${Math.round(evt.confidence * 100)}% (heur.)` : '—'}
+                        {evt.confidence ? `${Math.round(evt.confidence * 100)}% (heur.)` : '-'}
                       </td>
                       <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">{evt.ip || 'Masked'}</td>
                     </tr>

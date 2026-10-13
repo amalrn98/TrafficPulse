@@ -1,0 +1,222 @@
+openapi: 3.0.3
+info:
+  title: TrafficPulse Ingestion and Analytics API
+  description: High-throughput, privacy-preserving event ingestion and telemetry analytics for the agentic web.
+  version: 1.0.0
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:3000
+    description: Local development instance
+  - url: https://analytics.yourcompany.com
+    description: Production deployment
+
+paths:
+  /api/v1/events:
+    post:
+      summary: Ingest Telemetry Event
+      description: Ingests an HTTP request event or client-side telemetry payload for authoritative server-side classification and persistent storage.
+      operationId: ingestEvent
+      parameters:
+        - name: X-Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Unique client-generated key preventing duplicate event insertion on retries.
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Client-supplied tracing request ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestEventPayload'
+      responses:
+        '201':
+          description: Event successfully ingested and classified.
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestEventSuccessResponse'
+        '200':
+          description: Duplicate event detected via idempotency key; returned without metric inflation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestEventSuccessResponse'
+        '400':
+          description: Validation error or malformed payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Site not found or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Payload exceeds 64KB maximum size limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Ingestion rate limit exceeded for client IP or site.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/metrics:
+    get:
+      summary: Prometheus Metrics Exposition
+      description: Returns real-time ingestion counters, rejection reasons, classification latencies, and database latencies in Prometheus text format.
+      operationId: getMetrics
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Prometheus formatted metrics.
+          content:
+            text/plain; version=0.0.4:
+              schema:
+                type: string
+        '401':
+          description: Unauthorized access.
+
+  /api/health:
+    get:
+      summary: Readiness Probe
+      description: Returns overall system readiness status including database connection health.
+      responses:
+        '200':
+          description: System ready.
+        '503':
+          description: Database or critical dependency unavailable.
+
+  /api/health/liveness:
+    get:
+      summary: Liveness Probe
+      description: Ultra-fast container liveness probe with zero database dependency.
+      responses:
+        '200':
+          description: Container alive.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Token
+
+  schemas:
+    IngestEventPayload:
+      type: object
+      required:
+        - siteId
+        - path
+        - method
+        - userAgent
+      properties:
+        siteId:
+          type: string
+          example: site_live_prod
+        idempotencyKey:
+          type: string
+          example: mw_1712903829000_abc123
+        path:
+          type: string
+          example: /blog/agentic-web
+        method:
+          type: string
+          enum: [GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS]
+          example: GET
+        userAgent:
+          type: string
+          example: Mozilla/5.0 AppleWebKit/537.36 (compatible; GPTBot/1.2; +https://openai.com/gptbot)
+        referer:
+          type: string
+          example: https://google.com
+        statusCode:
+          type: integer
+          example: 200
+        durationMs:
+          type: number
+          example: 45.2
+        timestamp:
+          type: string
+          format: date-time
+          example: 2026-10-13T20:00:00.000Z
+        clientSignals:
+          type: object
+          properties:
+            mouseEntropy:
+              type: number
+            scrollEntropy:
+              type: number
+            webglRenderer:
+              type: string
+            webdriver:
+              type: boolean
+            interactionCount:
+              type: integer
+
+    IngestEventSuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        eventId:
+          type: string
+          example: evt_clz4x890001
+        actorType:
+          type: string
+          enum: [human_browser, ai_crawler, ai_agent, search_crawler, automation_tool, unknown]
+          example: ai_crawler
+        verificationStatus:
+          type: string
+          enum: [verified, claimed, inferred, unverified, unknown]
+          example: verified
+        category:
+          type: string
+          example: llm_training
+        confidence:
+          type: number
+          example: 0.95
+        isDuplicate:
+          type: boolean
+          example: false
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Validation Error
+        code:
+          type: string
+          example: VALIDATION_FAILED
+        message:
+          type: string
+          example: Invalid siteId parameter
+

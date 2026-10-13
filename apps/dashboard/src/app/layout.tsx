@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'TrafficPulse — Agentic Era Web Traffic Analytics',
+  title: 'TrafficPulse: Agentic Era Web Traffic Analytics',
   description: 'Production-grade analytics platform to detect, classify, and visualize AI agents, LLM scrapers, bot crawlers, and organic human visitors.',
 };
 

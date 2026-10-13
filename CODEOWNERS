@@ -1,0 +1,13 @@
+# Monorepo code ownership
+*       @amalrn98
+
+# Packages
+/packages/classifier/   @amalrn98
+/packages/tracker/      @amalrn98
+/packages/middleware/   @amalrn98
+/apps/dashboard/        @amalrn98
+
+# Security & Infrastructure
+/.github/workflows/     @amalrn98
+/deploy/                @amalrn98
+/docs/                  @amalrn98
