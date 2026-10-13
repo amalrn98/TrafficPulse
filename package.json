@@ -13,6 +13,9 @@
     "dev": "npm run dev --workspace=apps/dashboard",
     "lint": "npm run lint --workspaces --if-present"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "keywords": [
     "ai-agents",
     "traffic-analytics",

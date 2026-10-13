@@ -7,7 +7,11 @@
   var apiHost = currentScript ? (currentScript.getAttribute('data-api-host') || '') : '';
   var autoTrack = currentScript ? currentScript.getAttribute('data-auto-track') !== 'false' : true;
   var respectDnt = currentScript ? currentScript.getAttribute('data-respect-dnt') !== 'false' : true;
-  var disableBiometrics = currentScript ? currentScript.getAttribute('data-disable-biometrics') === 'true' : false;
+  var enableBehaviorAttr = currentScript ? currentScript.getAttribute('data-enable-behavior') : null;
+  var disableBiometricsAttr = currentScript ? currentScript.getAttribute('data-disable-biometrics') : null;
+
+  // Behavioral signals are opt-in by default for GDPR/ePrivacy compliance
+  var isBehaviorEnabled = enableBehaviorAttr === 'true' || disableBiometricsAttr === 'false';
 
   function isOptedOut() {
     try {
@@ -19,6 +23,9 @@
     if (respectDnt) {
       var nav = navigator || {};
       if (nav.doNotTrack === '1' || window.doNotTrack === '1' || nav.msDoNotTrack === '1') {
+        return true;
+      }
+      if (nav.globalPrivacyControl === true) {
         return true;
       }
     }
@@ -34,7 +41,7 @@
   var hasDispatched = false;
   var idempotencyKey = 'tp_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9);
 
-  if (!disableBiometrics) {
+  if (isBehaviorEnabled) {
     window.addEventListener('mousemove', function(e) {
       interactionCount++;
       if (mouseCoords.length < 20) {
@@ -48,13 +55,13 @@
     }, { passive: true });
   }
 
-  // Count key presses only - NEVER log raw key values or form input contents
+  // Count key presses only: never log raw key values or form input contents
   window.addEventListener('keydown', function() {
     interactionCount++;
   }, { passive: true });
 
   function calculateMouseEntropy() {
-    if (mouseCoords.length < 3) return 0;
+    if (!isBehaviorEnabled || mouseCoords.length < 3) return 0;
     var angles = [];
     for (var i = 1; i < mouseCoords.length; i++) {
       var dx = mouseCoords[i].x - mouseCoords[i - 1].x;
@@ -79,14 +86,15 @@
   }
 
   function getWebGLRenderer() {
+    if (!isBehaviorEnabled) return undefined;
     try {
       var canvas = document.createElement('canvas');
       var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-      if (!gl) return null;
+      if (!gl) return undefined;
       var ext = gl.getExtension('WEBGL_debug_renderer_info');
       if (ext) return gl.getParameter(ext.UNMASKED_RENDERER_WEBGL);
     } catch(e) {}
-    return null;
+    return undefined;
   }
 
   function collect() {
@@ -105,8 +113,8 @@
         hasPlugins: !!(nav.plugins && nav.plugins.length > 0),
         screenConsistency: scr.width > 0 && scr.height > 0,
         webglRenderer: getWebGLRenderer(),
-        mouseEntropy: disableBiometrics ? undefined : calculateMouseEntropy(),
-        scrollEntropy: disableBiometrics ? undefined : (scrollCount > 0 ? 1 : 0),
+        mouseEntropy: isBehaviorEnabled ? calculateMouseEntropy() : undefined,
+        scrollEntropy: isBehaviorEnabled ? (scrollCount > 0 ? 1 : 0) : undefined,
         interactionCount: interactionCount,
         dwellTimeMs: Date.now() - startTime,
         viewportWidth: window.innerWidth || 0,
