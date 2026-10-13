@@ -2,28 +2,52 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, hardening/*]
   pull_request:
     branches: [main]
 
 jobs:
-  build-and-test:
+  test:
+    name: Build & Test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: trafficpulse
+          POSTGRES_PASSWORD: trafficpulse_password
+          POSTGRES_DB: trafficpulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
       DATABASE_URL: "file:./dev.db"
+      NODE_ENV: test
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Install Clean Dependencies
+        run: npm ci
+
+      - name: Lint Workspaces
+        run: npm run lint
 
       - name: Setup Prisma Database Client
         run: |
@@ -33,8 +57,8 @@ jobs:
       - name: Build All Workspaces
         run: npm run build
 
-      - name: Run Monorepo Test Suite
+      - name: Run Test Suite
         run: npm test
 
-      - name: Build Production Dashboard
-        run: npm run build --workspace=@trafficpulse/dashboard
+      - name: Validate Docker Compose Configuration
+        run: docker compose config -q
