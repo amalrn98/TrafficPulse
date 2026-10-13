@@ -13,7 +13,7 @@
     "test": "node --test tests/validation.test.mjs tests/rate-limit.test.mjs tests/db.test.mjs tests/observability.test.mjs"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^7.10.0",
     "@trafficpulse/classifier": "*",
     "clsx": "^2.1.1",
     "lucide-react": "^0.453.0",
