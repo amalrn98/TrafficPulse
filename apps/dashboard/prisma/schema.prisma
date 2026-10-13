@@ -8,15 +8,18 @@ generator client {
 }
 
 model Site {
-  id        String   @id @default(cuid())
-  name      String
-  domain    String   @unique
-  apiKey    String   @unique
-  isDemo    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  events    Event[]
+  id             String   @id @default(cuid())
+  name           String
+  domain         String   @unique
+  apiKey         String?  // Legacy plaintext (nullable for migration)
+  keyHash        String   @unique // SHA-256 hash of API key
+  isRevoked      Boolean  @default(false)
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  events         Event[]
 
   @@index([isDemo])
+  @@index([isRevoked])
 }
 
 model Event {
@@ -55,6 +58,7 @@ model Event {
   @@unique([siteId, idempotencyKey])
   @@index([siteId, isDemo, timestamp])
   @@index([siteId, timestamp])
+  @@index([siteId, actorType])
   @@index([trafficCategory])
   @@index([actorType])
   @@index([botIdentifier])

@@ -8,16 +8,27 @@
 
 ## Reporting a Vulnerability
 
-The TrafficPulse team takes security vulnerabilities seriously.
+The TrafficPulse maintainers take security vulnerabilities seriously. We appreciate the responsible disclosure of security issues by the community.
 
-If you believe you have discovered a security vulnerability in TrafficPulse (such as a bypass to bot classification, SSRF, injection, or telemetry leakage), please do not report it in public GitHub issues.
+If you discover a potential vulnerability, please do NOT report it in public GitHub issues or discussions.
 
-Instead, please responsibly disclose it by emailing:
-**amal.nair.dev@users.noreply.github.com**
+### Contact & Reporting Options
 
-Please include:
-- A description of the vulnerability.
-- Steps to reproduce or a minimal proof of concept (PoC).
-- Potential impact and suggested mitigations if known.
+1. **GitHub Private Security Advisory (Preferred)**:
+   Navigate to the repository Security tab and select "Report a vulnerability" to open a confidential report.
+2. **Security Contact**:
+   Email: **security@trafficpulse.dev** (Monitored by core security team)
 
-We will acknowledge receipt within 48 hours and work with you on a coordinated fix.
+### What to Include
+
+Please provide:
+- A description of the issue (e.g. classification bypass, SSRF, injection, cross-tenant leak, authentication circumvention).
+- Step-by-step instructions or proof-of-concept (PoC) code to reproduce the issue.
+- Impact assessment and suggested remediations if identified.
+
+### Response & Coordinated Disclosure Timeline
+
+- **Initial Response**: Within 48 hours to confirm receipt.
+- **Triage & Assessment**: Within 5 business days with preliminary findings.
+- **Remediation & Patching**: Aimed within 14 to 30 days depending on severity.
+- **Public Disclosure**: Coordinated after the fix has been released and operators have had opportunity to upgrade.

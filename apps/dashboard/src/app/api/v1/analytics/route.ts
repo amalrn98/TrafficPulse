@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dbStore } from '@/lib/db';
+import { verifyAdminAuth } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
+  const auth = verifyAdminAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json(
+      { error: 'Unauthorized', message: auth.error || 'Authentication required' },
+      { status: 401 }
+    );
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const requestedSiteId = searchParams.get('siteId') || undefined;
@@ -75,6 +84,14 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = verifyAdminAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json(
+      { error: 'Unauthorized', message: auth.error || 'Authentication required' },
+      { status: 401 }
+    );
+  }
+
   try {
     const body = await req.json();
     if (!body || !body.domain) {
@@ -92,6 +109,33 @@ export async function POST(req: NextRequest) {
     console.error('Site creation error:', err instanceof Error ? err.message : String(err));
     return NextResponse.json(
       { error: 'Internal Server Error', message: 'Failed to register site' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const auth = verifyAdminAuth(req);
+  if (!auth.authorized) {
+    return NextResponse.json(
+      { error: 'Unauthorized', message: auth.error || 'Authentication required' },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const { searchParams } = new URL(req.url);
+    const siteId = searchParams.get('siteId');
+    if (!siteId) {
+      return NextResponse.json({ error: 'Missing siteId parameter' }, { status: 400 });
+    }
+
+    const res = await dbStore.deleteSiteEvents(siteId);
+    return NextResponse.json({ success: true, deletedEvents: res.count });
+  } catch (err: unknown) {
+    console.error('Data deletion error:', err instanceof Error ? err.message : String(err));
+    return NextResponse.json(
+      { error: 'Internal Server Error', message: 'Failed to delete site events' },
       { status: 500 }
     );
   }

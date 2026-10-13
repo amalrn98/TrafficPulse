@@ -8,8 +8,22 @@ import { extractClientIp, maskIpAddress } from '@/lib/ip-utils';
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB limit
 
 function buildCorsHeaders(origin: string | null, siteDomain?: string) {
-  // If origin is provided and matches or is development, reflect the origin; otherwise use safe default
-  const allowedOrigin = origin || '*';
+  let allowedOrigin = '*';
+  if (siteDomain && origin) {
+    try {
+      const originUrl = new URL(origin);
+      if (originUrl.hostname === siteDomain || originUrl.hostname.endsWith(`.${siteDomain}`)) {
+        allowedOrigin = origin;
+      } else {
+        allowedOrigin = 'null';
+      }
+    } catch {
+      allowedOrigin = 'null';
+    }
+  } else if (origin) {
+    allowedOrigin = origin;
+  }
+
   return {
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -74,7 +88,7 @@ export async function POST(req: NextRequest) {
   // 4. Rate Limiting per site and IP
   const clientIp = extractClientIp(req.headers);
   const rateLimitKey = `${payload.siteId}:${clientIp || 'unauthenticated'}`;
-  const rateLimitRes = ingestionRateLimiter.check(rateLimitKey);
+  const rateLimitRes = await ingestionRateLimiter.check(rateLimitKey);
 
   if (!rateLimitRes.allowed) {
     return NextResponse.json(

@@ -33,7 +33,9 @@ export interface SiteRecord {
   id: string;
   name: string;
   domain: string;
-  apiKey: string;
+  apiKey?: string; // Only present when newly created or explicitly returned during creation/rotation
+  keyHash?: string;
+  isRevoked?: boolean;
   isDemo: boolean;
   createdAt: string;
 }
@@ -47,7 +49,15 @@ export class TrafficPulseDb {
   }
 
   /**
+   * Generates SHA-256 hash for secure storage of API keys.
+   */
+  public static hashApiKey(apiKey: string): string {
+    return crypto.createHash('sha256').update(apiKey.trim()).digest('hex');
+  }
+
+  /**
    * Retrieves or creates a site record in the persistent database.
+   * If creating a new site, returns the raw apiKey once.
    */
   public async getOrCreateSite(domain: string, name?: string, isDemo = false): Promise<SiteRecord> {
     const cleanDomain = domain.trim().toLowerCase();
@@ -60,17 +70,23 @@ export class TrafficPulseDb {
         id: existing.id,
         name: existing.name,
         domain: existing.domain,
-        apiKey: existing.apiKey,
+        apiKey: existing.apiKey || undefined,
+        keyHash: existing.keyHash,
+        isRevoked: existing.isRevoked,
         isDemo: existing.isDemo,
         createdAt: existing.createdAt.toISOString(),
       };
     }
 
+    const rawKey = TrafficPulseDb.generateApiKey();
+    const keyHash = TrafficPulseDb.hashApiKey(rawKey);
+
     const created = await prisma.site.create({
       data: {
         domain: cleanDomain,
         name: name || cleanDomain,
-        apiKey: TrafficPulseDb.generateApiKey(),
+        apiKey: rawKey,
+        keyHash,
         isDemo,
       },
     });
@@ -79,7 +95,9 @@ export class TrafficPulseDb {
       id: created.id,
       name: created.name,
       domain: created.domain,
-      apiKey: created.apiKey,
+      apiKey: rawKey, // Returned once upon creation
+      keyHash: created.keyHash,
+      isRevoked: created.isRevoked,
       isDemo: created.isDemo,
       createdAt: created.createdAt.toISOString(),
     };
@@ -92,30 +110,41 @@ export class TrafficPulseDb {
     const site = await prisma.site.findUnique({
       where: { id: siteId },
     });
-    if (!site) return null;
+    if (!site || site.isRevoked) return null;
     return {
       id: site.id,
       name: site.name,
       domain: site.domain,
-      apiKey: site.apiKey,
+      apiKey: site.apiKey || undefined,
+      keyHash: site.keyHash,
+      isRevoked: site.isRevoked,
       isDemo: site.isDemo,
       createdAt: site.createdAt.toISOString(),
     };
   }
 
   /**
-   * Finds a site by its API key (used for server/middleware authentication).
+   * Finds a site by its raw API key by computing its SHA-256 hash.
    */
   public async getSiteByApiKey(apiKey: string): Promise<SiteRecord | null> {
-    const site = await prisma.site.findUnique({
-      where: { apiKey },
+    const hash = TrafficPulseDb.hashApiKey(apiKey);
+    const site = await prisma.site.findFirst({
+      where: {
+        OR: [
+          { keyHash: hash },
+          { apiKey: apiKey }, // Backward-compatibility fallback
+        ],
+        isRevoked: false,
+      },
     });
     if (!site) return null;
     return {
       id: site.id,
       name: site.name,
       domain: site.domain,
-      apiKey: site.apiKey,
+      apiKey: site.apiKey || undefined,
+      keyHash: site.keyHash,
+      isRevoked: site.isRevoked,
       isDemo: site.isDemo,
       createdAt: site.createdAt.toISOString(),
     };
@@ -123,6 +152,7 @@ export class TrafficPulseDb {
 
   /**
    * Lists registered sites, optionally filtering demo sites.
+   * Strips raw API keys to avoid credential leakage.
    */
   public async listSites(includeDemo = true): Promise<SiteRecord[]> {
     const sites = await prisma.site.findMany({
@@ -133,10 +163,36 @@ export class TrafficPulseDb {
       id: s.id,
       name: s.name,
       domain: s.domain,
-      apiKey: s.apiKey,
+      apiKey: undefined, // Never expose raw keys in listings
+      keyHash: s.keyHash,
+      isRevoked: s.isRevoked,
       isDemo: s.isDemo,
       createdAt: s.createdAt.toISOString(),
     }));
+  }
+
+  /**
+   * Prunes events older than the specified retention days (default 90 days).
+   */
+  public async pruneRetentionEvents(retentionDays = 90): Promise<{ count: number }> {
+    if (retentionDays <= 0) return { count: 0 };
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const res = await prisma.event.deleteMany({
+      where: {
+        timestamp: { lt: cutoff },
+      },
+    });
+    return { count: res.count };
+  }
+
+  /**
+   * Deletes all events associated with a specific site.
+   */
+  public async deleteSiteEvents(siteId: string): Promise<{ count: number }> {
+    const res = await prisma.event.deleteMany({
+      where: { siteId },
+    });
+    return { count: res.count };
   }
 
   /**

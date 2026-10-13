@@ -3,7 +3,7 @@
  */
 
 export function extractClientIp(reqHeaders: Headers): string {
-  const trustProxy = process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production';
+  const trustProxy = process.env.TRUST_PROXY === 'true';
 
   if (trustProxy) {
     // Cloudflare Connecting IP is cryptographically injected by Cloudflare edge

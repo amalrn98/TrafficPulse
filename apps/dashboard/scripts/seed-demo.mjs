@@ -1,19 +1,29 @@
 import { PrismaClient } from '@prisma/client';
+import crypto from 'crypto';
 
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' && process.env.FORCE_SEED !== 'true') {
+    console.error('Refusing to seed demo data in production environment. Set FORCE_SEED=true to override.');
+    process.exit(1);
+  }
+
   console.log('Seeding TrafficPulse demo sandbox data...');
 
   const demoDomain = 'demo.trafficpulse.io';
+  const rawDemoKey = 'tp_demo_key_9999999999999999';
+  const keyHash = crypto.createHash('sha256').update(rawDemoKey).digest('hex');
+
   const demoSite = await prisma.site.upsert({
     where: { domain: demoDomain },
-    update: { isDemo: true },
+    update: { isDemo: true, keyHash },
     create: {
       id: 'site_demo_sandbox',
       name: 'Interactive Demo Sandbox',
       domain: demoDomain,
-      apiKey: 'tp_demo_key_9999999999999999',
+      apiKey: rawDemoKey,
+      keyHash,
       isDemo: true,
     },
   });

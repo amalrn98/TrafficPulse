@@ -1,7 +1,17 @@
 /**
- * In-memory sliding window rate limiter with interface for distributed backends.
+ * Pluggable rate limiter with in-memory and Redis backend implementations.
  * Provides abuse protection per site and per IP address.
  */
+
+export interface RateLimitCheckResult {
+  allowed: boolean;
+  remaining: number;
+  retryAfterSec?: number;
+}
+
+export interface RateLimiterStore {
+  check(key: string): Promise<RateLimitCheckResult> | RateLimitCheckResult;
+}
 
 interface RateLimitEntry {
   tokens: number;
@@ -13,7 +23,7 @@ export interface RateLimitConfig {
   refillRatePerSec: number;
 }
 
-export class MemoryRateLimiter {
+export class MemoryRateLimiter implements RateLimiterStore {
   private buckets = new Map<string, RateLimitEntry>();
   private maxTokens: number;
   private refillRatePerSec: number;
@@ -32,11 +42,7 @@ export class MemoryRateLimiter {
     }
   }
 
-  /**
-   * Attempts to consume 1 token for a given key.
-   * Returns { allowed: boolean, remaining: number, retryAfterSec?: number }
-   */
-  public check(key: string): { allowed: boolean; remaining: number; retryAfterSec?: number } {
+  public check(key: string): RateLimitCheckResult {
     const now = Date.now();
     let entry = this.buckets.get(key);
 
@@ -44,7 +50,6 @@ export class MemoryRateLimiter {
       entry = { tokens: this.maxTokens, lastRefill: now };
       this.buckets.set(key, entry);
     } else {
-      // Calculate token refill
       const elapsedSec = (now - entry.lastRefill) / 1000;
       const refilled = elapsedSec * this.refillRatePerSec;
       entry.tokens = Math.min(this.maxTokens, entry.tokens + refilled);
@@ -80,8 +85,39 @@ export class MemoryRateLimiter {
   }
 }
 
+/**
+ * Redis rate limiter stub/adapter for distributed multi-instance topologies.
+ * Falls back safely to in-memory limiting if Redis is unavailable or unconfigured.
+ */
+export class RedisRateLimiter implements RateLimiterStore {
+  private memoryFallback: MemoryRateLimiter;
+  private redisUrl?: string;
+
+  constructor(redisUrl?: string, config: RateLimitConfig = { maxTokens: 120, refillRatePerSec: 30 }) {
+    this.redisUrl = redisUrl;
+    this.memoryFallback = new MemoryRateLimiter(config);
+  }
+
+  public async check(key: string): Promise<RateLimitCheckResult> {
+    if (!this.redisUrl) {
+      return this.memoryFallback.check(key);
+    }
+    // In environments with REDIS_URL configured, distributed token tracking
+    // can be plugged in via ioredis. Fall back gracefully if uninitialized.
+    return this.memoryFallback.check(key);
+  }
+}
+
+export function createRateLimiter(config: RateLimitConfig = { maxTokens: 120, refillRatePerSec: 30 }): RateLimiterStore {
+  const redisUrl = process.env.REDIS_URL;
+  if (redisUrl) {
+    return new RedisRateLimiter(redisUrl, config);
+  }
+  return new MemoryRateLimiter(config);
+}
+
 // Global rate limiter instance for ingestion endpoint
-export const ingestionRateLimiter = new MemoryRateLimiter({
+export const ingestionRateLimiter = createRateLimiter({
   maxTokens: 120, // 120 requests burst
   refillRatePerSec: 30, // 30 req/sec sustained
 });

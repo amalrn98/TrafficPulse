@@ -199,3 +199,17 @@ test('Time Bucketing - Unambiguous UTC timeseries buckets prevent cross-day hour
     assert.ok(bucket.time.includes('UTC'), 'Label must explicitly declare UTC');
   }
 });
+
+test('Data Lifecycle - Supports retention pruning and per-site deletion', async () => {
+  // Prune retention events
+  const pruned = await dbStore.pruneRetentionEvents(90);
+  assert.ok(typeof pruned.count === 'number');
+
+  // Delete all events for site B
+  const deleted = await dbStore.deleteSiteEvents(siteB.id);
+  assert.ok(typeof deleted.count === 'number');
+
+  const overviewB = await dbStore.getOverview(siteB.id, false);
+  assert.strictEqual(overviewB.total, 0, 'Site B should have 0 events after deletion');
+});
+
