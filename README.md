@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mythicavalon/TrafficPulse/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache 2.0"></a>
+  <a href="https://github.com/amalrn98/TrafficPulse/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache 2.0"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D20.0.0-green.svg" alt="Node Version"></a>
   <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-14-black.svg" alt="Next.js"></a>
   <a href="https://www.prisma.io/"><img src="https://img.shields.io/badge/Prisma-5.22-teal.svg" alt="Prisma ORM"></a>
-  <a href="https://github.com/mythicavalon/TrafficPulse/actions"><img src="https://img.shields.io/badge/build-passing-brightgreen.svg" alt="Build Status"></a>
+  <a href="https://github.com/amalrn98/TrafficPulse/actions/workflows/ci.yml"><img src="https://github.com/amalrn98/TrafficPulse/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI Status"></a>
 </p>
 
 ---
@@ -107,8 +107,8 @@ export default withTrafficPulse({
   apiKey: process.env.TRAFFICPULSE_API_KEY!,
   apiHost: 'https://analytics.yourcompany.com',
   onClassified: (req, classification) => {
-    // Optional defense hook
-    if (classification.category === 'generic_bot') {
+    // Optional defense hook: use actorType from the documented taxonomy
+    if (classification.actorType === 'automation_tool') {
       return new Response('Access Denied', { status: 403 });
     }
   },
@@ -162,32 +162,26 @@ export default {
 
 ---
 
-## 🧪 Classifier Evaluation & Empirical Benchmark
+## Classifier Regression Suite
 
-We provide an empirical evaluation harness (`packages/classifier/tests/evaluation.test.ts`) covering 19 representative test fixtures across crawlers, agents, browsers, spoofed headers, and adversarial inputs.
+We maintain a regression test harness (`packages/classifier/tests/evaluation.test.ts`) with 19 labelled fixtures covering verified crawlers, real-time AI agents, browsers, spoofed headers, and adversarial inputs.
 
-Results from test execution (`npm test --workspace=@trafficpulse/classifier`):
+**Important: This is a regression suite, not an accuracy benchmark.**
+
+The 19 fixtures were designed alongside the classifier to document intended behavior for known traffic patterns. They are not a held-out test set and do not represent real-world traffic distribution. Presenting a 19-sample suite as a precision/recall benchmark would be misleading.
+
+See [docs/EVALUATION.md](docs/EVALUATION.md) for the documented evaluation methodology, fixture provenance, and the limitations of heuristic classifiers.
+
+Latest regression results (`npm test --workspace=@trafficpulse/classifier`):
 
 ```
-========================================================================
-  TRAFFICPULSE CLASSIFIER EVALUATION BENCHMARK (DATASET v1.0, N=19)
-========================================================================
-Class              | Samples | Precision | Recall  | F1 Score | FPR
--------------------+---------+-----------+---------+----------+------
-ai_crawler         |       4 |     1.000 |   1.000 |    1.000 | 0.000
-ai_agent           |       3 |     1.000 |   1.000 |    1.000 | 0.000
-search_crawler     |       3 |     1.000 |   1.000 |    1.000 | 0.000
-automation_tool    |       4 |     1.000 |   1.000 |    1.000 | 0.000
-human_browser      |       3 |     1.000 |   1.000 |    1.000 | 0.000
-unknown            |       2 |     1.000 |   1.000 |    1.000 | 0.000
--------------------+---------+-----------+---------+----------+------
-Macro Average      |   19    |     1.000 |   1.000 |    1.000 |
-Overall Accuracy   : 100.0% (19/19)
-Verification Match : 100.0% (19/19)
-========================================================================
+Regression Suite v1.0 (N=19 known-behavior fixtures)
+All 19 fixtures pass classification and verification status checks.
+This confirms no regressions against documented behavior.
+For real-world accuracy, deploy and measure against actual production traffic.
 ```
 
-*Note on dataset limitations: This benchmark measures accuracy against documented representative signatures and CIDR boundaries. It does not claim real-world distribution coverage across all possible web traffic.*
+Note on evaluation methodology: an independent evaluation against real production traffic samples, including distribution shifts and novel evasion techniques, is required before making any accuracy claims. See docs/EVALUATION.md.
 
 ---
 

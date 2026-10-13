@@ -4,6 +4,30 @@
   "description": "Zero-latency Edge and Server middleware for Next.js, Express, and Cloudflare Workers",
   "main": "./dist/middleware/src/index.js",
   "types": "./dist/middleware/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/middleware/src/index.d.ts",
+      "default": "./dist/middleware/src/index.js"
+    },
+    "./nextjs": {
+      "types": "./dist/middleware/src/nextjs.d.ts",
+      "default": "./dist/middleware/src/nextjs.js"
+    },
+    "./express": {
+      "types": "./dist/middleware/src/express.d.ts",
+      "default": "./dist/middleware/src/express.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/middleware/src/cloudflare.d.ts",
+      "default": "./dist/middleware/src/cloudflare.js"
+    }
+  },
+  "files": [
+    "dist/middleware/src"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsc",
     "test": "node --test dist/middleware/tests/middleware.test.js"

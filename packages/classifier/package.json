@@ -1,20 +1,30 @@
 {
   "name": "@trafficpulse/classifier",
   "version": "1.0.0",
-  "description": "High-accuracy traffic classification engine for distinguishing AI agents, LLM scrapers, search bots, and humans",
+  "description": "Evidence-based, epistemic traffic classifier for the agentic web",
   "main": "./dist/src/index.js",
   "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "files": [
+    "dist/src"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "build": "tsc",
-    "test": "node --test dist/tests/classifier.test.js dist/tests/evaluation.test.js",
-    "test:eval": "node --test dist/tests/evaluation.test.js"
+    "test": "node --test dist/tests/classifier.test.js dist/tests/evaluation.test.js"
   },
   "keywords": [
-    "ai-detection",
-    "agent-detection",
-    "bot-classifier",
-    "gptbot",
-    "crawler-classifier"
+    "bot-detection",
+    "ai-crawler",
+    "traffic-classification",
+    "epistemic"
   ],
   "author": "Amal Nair",
   "license": "Apache-2.0",

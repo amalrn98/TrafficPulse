@@ -28,3 +28,8 @@ This document records architectural decisions, trade-offs, and defaults adopted 
 - **Context**: Client tracker collected mouse and scroll entropy and WebGL hints by default.
 - **Decision**: In compliance with ePrivacy and GDPR consent principles, make behavioral telemetry and WebGL rendering hints opt-in by default. Honor both Do Not Track (`navigator.doNotTrack`) and Global Privacy Control (`navigator.globalPrivacyControl`).
 - **Status**: Accepted (Phase 5).
+
+### DEC-006: Middleware Package Module Format
+- **Context**: Express consumers use CommonJS require(). Next.js and Cloudflare Workers use ESM import.
+- **Decision**: The middleware package ships a single CJS build (the TypeScript compiler outputs CommonJS via module: CommonJS in tsconfig). This works for both require() (CJS) and bundlers that resolve the exports map (ESM consumers bundled by webpack/turbopack/esbuild). A true dual ESM/CJS build requires additional tooling (tsup or esbuild) which adds build complexity. Current approach is documented as CJS-only for Node environments; bundlers handle ESM consumers automatically.
+- **Status**: Accepted (Phase 1). Full dual build deferred to Phase 8 when changesets and build tooling are established.
