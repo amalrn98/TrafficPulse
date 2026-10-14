@@ -1,35 +1,27 @@
 # TrafficPulse Production Readiness Audit
 
-**Date:** 2026-10-13  
+**Date:** 2026-10-14  
 **Auditor:** Senior Staff Hardening Engineer  
-**Branch:** `hardening/production-readiness`  
+**Branch:** `main`  
 **Target Repo:** `https://github.com/amalrn98/TrafficPulse`  
 
-This document records the complete baseline audit, finding statuses, verification commands, and remediation details for TrafficPulse across all phases (Phase 0 through Phase 9).
-
----
+This document records the complete baseline audit, finding statuses, verification commands, and remediation details for TrafficPulse across all phases (Phase 0 through Phase 10).
 
 ## 1. Baseline Commands and Exact Results
 
 ### 1.1 Repository State
-```bash
-Command: git remote -v; git log --oneline -5; git status
-Result: Clean working tree on branch hardening/production-readiness.
-Exit: 0
-```
+Command: `git remote -v; git log --oneline -5; git status`
+Result: Clean working tree on branch `main`.
+Exit: `0`
 
 ### 1.2 Monorepo Build and Test Verification
-```bash
-Command: npm run build; npm test
-Result: All workspaces build and all 45 tests pass cleanly:
-  @trafficpulse/classifier: 14 tests pass (13 unit + regression suite)
-  @trafficpulse/middleware: 7 tests pass (unit + fail-open resilience)
-  @trafficpulse/tracker: 6 tests pass (SSR, telemetry, opt-in behavior, GPC)
-  @trafficpulse/dashboard: 18 tests pass (DB, rate-limit, validation, metrics, auth)
-Exit: 0
-```
-
----
+Command: `npm run build; npm test`
+Result: All workspaces build and all 47 tests pass cleanly:
+- `@trafficpulse/classifier`: 14 tests pass (13 unit + regression suite)
+- `@trafficpulse/middleware`: 7 tests pass (unit + `event.waitUntil` + fail-open resilience)
+- `@trafficpulse/tracker`: 6 tests pass (SSR, telemetry, opt-in behavior, GPC)
+- `@trafficpulse/dashboard`: 20 tests pass (DB, Redis RESP rate-limit, validation, metrics, auth)
+Exit: `0`
 
 ## 2. Ranked Findings and Resolution Status
 
@@ -37,22 +29,20 @@ Exit: 0
 
 | ID | Component | Finding | Status | Resolution & Evidence |
 |---|---|---|---|---|
-| **SEC-01** | `analytics/route.ts` | Missing authentication on analytics API; exposed site data and creation. | **Fixed** | Added `verifyAdminAuth` guard on GET, POST, and DELETE in `apps/dashboard/src/app/api/v1/analytics/route.ts`. Returns 401 on missing/invalid `ADMIN_API_KEY`. |
-| **SEC-02** | `db.ts`, `schema.prisma` | Raw API keys stored in plaintext; exposed in listings. | **Fixed** | Added `keyHash` (SHA-256) and `isRevoked` to `Site` model. Raw key returned only once upon creation; never persisted or logged. |
+| **SEC-01** | `analytics/route.ts`, `auth.ts`, `page.tsx` | Missing authentication on analytics API; production UI needed admin login flow. | **Fixed** | Added constant-time `verifyAdminAuth` guard (`crypto.timingSafeEqual`) on GET, POST, and DELETE in `apps/dashboard/src/app/api/v1/analytics/route.ts` and added an Admin Key login modal in `apps/dashboard/src/app/page.tsx`. |
+| **SEC-02** | `db.ts`, `schema.prisma` | Raw API keys stored in plaintext or hashed with fast digest (CodeQL #110). | **Fixed** | Derived `keyHash` via `crypto.scryptSync` KDF with bounded memoization (resolving CodeQL CWE-916 alert #110) and enforced `apiKey: null` in DB creation so raw keys are returned once and never persisted on disk. |
 | **SEC-03** | `ip-utils.ts` | Proxy header trust unconditionally enabled in production. | **Fixed** | Restricted `extractClientIp` in `src/lib/ip-utils.ts` to require explicit `TRUST_PROXY=true`. |
 | **SEC-04** | `apps/dashboard/package.json` | Next.js and PostCSS security advisories. | **Fixed** | Upgraded `next` to `^14.2.25` (patched 14.x LTS), `eslint-config-next` to `^14.2.25`, and `postcss` to `^8.5.3`. Verified full build and test pass. |
-| **SEC-05** | `events/route.ts` | Wildcard CORS reflection on ingestion endpoint. | **Fixed** | Implemented domain-scoped origin matching in `buildCorsHeaders` against registered site domain. |
-| **DAT-01** | `schema.prisma`, `docker-compose.yml` | Hardcoded SQLite provider without production DB guidance. | **Fixed** | Added PostgreSQL 16 service in `docker-compose.yml`, documented PostgreSQL production setup in `docs/SELF_HOSTING.md`, retained SQLite for local dev (`docker-compose.dev.yml`). |
-| **DAT-02** | `schema.prisma` | Schema management using `db:push` without committed migrations. | **Fixed** | Documented migration workflow; added compound index `@@index([siteId, actorType])` and `@@index([siteId, timestamp])`. |
-| **OPS-01** | `Dockerfile` | Bloated image running as root with dev dependencies. | **Fixed** | Rewrote Dockerfile: pinned `node:22.14-alpine`, `npm ci`, Next.js standalone output, non-root user `nextjs` (UID 1001), added `HEALTHCHECK`. |
-
----
+| **SEC-05** | `events/route.ts` | Wildcard CORS reflection on ingestion endpoint. | **Fixed** | Recomputed domain-scoped CORS headers in `buildCorsHeaders(origin, site.domain)` after resolving the target site and enforced `403 ORIGIN_MISMATCH` on unauthorized cross-origin browser beacons. |
+| **DAT-01** | `schema.prisma`, `schema.postgres.prisma`, `ci.yml` | Hardcoded SQLite provider in production Docker and CI builds. | **Fixed** | Added `apps/dashboard/prisma/schema.postgres.prisma` for production Docker builds, retained SQLite for zero-config local dev, and added PostgreSQL 16 integration test execution in `.github/workflows/ci.yml`. |
+| **DAT-02** | `schema.prisma`, `db.ts` | Unbounded full-table scans on analytics polling. | **Fixed** | Added compound indexes `@@index([siteId, isDemo, timestamp])` and `@@index([siteId, actorType])`, 60-second TTL site caching, and 24-hour time-windowed, DB-bounded aggregation queries in `db.ts`. |
+| **OPS-01** | `Dockerfile` | Bloated image running as root with dev dependencies. | **Fixed** | Rewrote Dockerfile: pinned `node:22.14-alpine`, `npm ci`, PostgreSQL Prisma client generation, Next.js standalone output, non-root user `nextjs` (UID 1001), and `HEALTHCHECK`. |
 
 ### P1 - Correctness, Privacy, and Resilience (All Resolved)
 
 | ID | Component | Finding | Status | Resolution & Evidence |
 |---|---|---|---|---|
-| **DOC-01** | `README.md` | Badges pointed to obsolete remote; static build badge. | **Fixed** | Updated links to `amalrn98/TrafficPulse` and replaced static SVG with live GitHub Actions badge. |
+| **DOC-01** | `README.md`, `page.tsx` | Badges and footer links pointed to obsolete remote. | **Fixed** | Updated links in `README.md` and `apps/dashboard/src/app/page.tsx` to `amalrn98/TrafficPulse` and replaced static SVG with live GitHub Actions badge. |
 | **DOC-02** | `README.md` L111 | `onClassified` example used legacy `category: generic_bot`. | **Fixed** | Replaced with documented taxonomy (`actorType: 'automation_tool'`). |
 | **DOC-03** | `README.md`, `evaluation.test.ts` | 19-fixture test framed as "100% accuracy benchmark". | **Fixed** | Reframed as regression test suite; added `docs/EVALUATION.md` documenting methodology and heuristic score limitations. |
 | **PKG-01** | `middleware/package.json` | No exports map or types field. | **Fixed** | Added `exports` map (`.`, `./nextjs`, `./express`, `./cloudflare`), `types`, and `engines` (`>=20.0.0`). |
@@ -62,16 +52,14 @@ Exit: 0
 | **PRV-01** | `tracker/src/index.ts` | Behavioral signals and WebGL collected by default. | **Fixed** | Made behavioral signals (mouse/scroll entropy, WebGL) opt-in by default via `enableBehavior: true` with backward-compatible `disableBiometrics` alias. |
 | **PRV-02** | `tracker/src/index.ts` | Global Privacy Control (GPC) ignored. | **Fixed** | Added `navigator.globalPrivacyControl` check to `isOptedOut()`. |
 | **PRV-03** | `docs/` | Missing privacy documentation. | **Fixed** | Created comprehensive `docs/PRIVACY.md` detailing data inventory, IP masking, retention, and legal considerations. |
-| **DAT-03** | `db.ts` | Unbounded event growth; no retention pruning. | **Fixed** | Added `pruneRetentionEvents(retentionDays)` and `deleteSiteEvents(siteId)` to `dbStore`. |
-| **SEC-06** | `rate-limit.ts` | In-memory only rate limiter. | **Fixed** | Created pluggable `RateLimiterStore` supporting in-memory and Redis backends with fallbacks. |
+| **DAT-03** | `db.ts`, `admin/retention/prune/route.ts` | Unbounded event growth; missing retention prune API endpoint. | **Fixed** | Added `pruneRetentionEvents(retentionDays)` and `deleteSiteEvents(siteId)` to `dbStore` and created `POST /api/v1/admin/retention/prune` protected by `verifyAdminAuth`. |
+| **SEC-06** | `rate-limit.ts` | In-memory only rate limiter stub. | **Fixed** | Implemented zero-dependency Node `net`/`tls` Redis RESP Lua token-bucket client in `RedisRateLimiter` with 150 ms timeout and automatic fallback to `MemoryRateLimiter`. |
 | **SEC-07** | `next.config.mjs` | Missing security headers and strict CSP. | **Fixed** | Configured CSP, HSTS, X-Content-Type-Options, X-Frame-Options, and Referrer-Policy in `next.config.mjs`. |
-| **NET-01** | `middleware/src/*.ts` | Middleware dispatch lacked timeouts and retry resilience. | **Fixed** | Created `dispatchWithRetry` with 3,000 ms timeout, bounded retries (max 2), and strict fail-open execution across all adapters. |
+| **NET-01** | `middleware/src/*.ts` | Middleware dispatch lacked timeouts, retry resilience, and Edge `waitUntil`. | **Fixed** | Created `dispatchEventWithRetry` with 3,000 ms timeout, bounded retries (max 2), `event.waitUntil` registration in Next.js Edge middleware, and strict fail-open execution. |
 | **OPS-02** | `docker-compose.yml` | Obsolete version key; missing Postgres and Redis services. | **Fixed** | Rewrote `docker-compose.yml` with Postgres 16, Redis 7, volumes, resource limits, and healthchecks. Created `docker-compose.dev.yml`. |
-| **OPS-03** | `health/route.ts` | Health check coupled to DB; risk of premature container kill. | **Fixed** | Created DB-independent liveness probe at `/api/health/liveness`; kept DB readiness check at `/api/health`. |
+| **OPS-03** | `health/route.ts`, `trafficpulse.yaml` | Health check coupled to DB; missing K8s scaling and security primitives. | **Fixed** | Created DB-independent liveness probe at `/api/health/liveness`, kept DB readiness check at `/api/health`, and hardened `deploy/kubernetes/trafficpulse.yaml` with HPA, PDB, NetworkPolicy, `securityContext` (`readOnlyRootFilesystem: true`, UID 1001), `/tmp` `emptyDir`, and Prometheus scrape annotations. |
 | **OBS-01** | `apps/dashboard/src/app/api/` | Missing structured logging and metrics export. | **Fixed** | Implemented structured JSON logger with request IDs and zero PII. Added protected Prometheus exposition endpoint at `/api/metrics`. |
-| **TST-01** | `.github/workflows/` | Incomplete CI workflows and missing security scans. | **Fixed** | Updated `ci.yml` with Node 20/22 matrix, PostgreSQL service container, `npm ci`, and lint. Added `security.yml` (CodeQL, Trivy) and `release.yml`. |
-
----
+| **TST-01** | `.github/workflows/` | Incomplete CI workflows and missing security scans. | **Fixed** | Updated `ci.yml` with Node 20/22 matrix, SQLite + PostgreSQL 16 test execution, `npm ci`, and lint. Added `security.yml` (CodeQL, Trivy) and `release.yml`. |
 
 ### P2 - Hygiene and Maintenance (All Resolved)
 
@@ -87,8 +75,6 @@ Exit: 0
 | **HYG-08** | `scripts/seed-demo.mjs` | Seed script executable in production. | **Fixed** | Added strict production guard preventing accidental execution when `NODE_ENV === 'production'`. |
 | **HYG-09** | Packages | Missing `engines` field in package.json files. | **Fixed** | Added `"engines": { "node": ">=20.0.0" }` across classifier, tracker, and middleware packages. |
 | **HYG-10** | `classifier/package.json` | Missing `types` field. | **Fixed** | Added `"types": "./dist/src/index.d.ts"` and `"files": ["dist/src", "data"]`. |
-
----
 
 ## 3. Items Requiring Human Decision
 

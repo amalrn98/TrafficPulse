@@ -48,6 +48,7 @@ interface CachedEntry<T> {
 const SITE_CACHE_TTL_MS = 60 * 1000;
 
 export class TrafficPulseDb {
+  private static derivedKeyCache = new Map<string, string>();
   private siteByIdCache = new Map<string, CachedEntry<SiteRecord>>();
   private siteByKeyHashCache = new Map<string, CachedEntry<SiteRecord>>();
 
@@ -59,10 +60,25 @@ export class TrafficPulseDb {
   }
 
   /**
-   * Generates SHA-256 hash for secure storage of API keys.
+   * Derives a 64-character hex key hash using scrypt KDF for secure storage of API keys.
+   * Uses a bounded in-memory memoization cache so repeated lookups remain sub-millisecond.
    */
   public static hashApiKey(apiKey: string): string {
-    return crypto.createHash('sha256').update(apiKey.trim()).digest('hex');
+    const cleanKey = apiKey.trim();
+    const cached = TrafficPulseDb.derivedKeyCache.get(cleanKey);
+    if (cached) {
+      return cached;
+    }
+    const salt = process.env.API_KEY_SALT || 'trafficpulse-kdf-salt-v1';
+    const derived = crypto.scryptSync(cleanKey, salt, 32).toString('hex');
+    if (TrafficPulseDb.derivedKeyCache.size >= 1000) {
+      const oldestKey = TrafficPulseDb.derivedKeyCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        TrafficPulseDb.derivedKeyCache.delete(oldestKey);
+      }
+    }
+    TrafficPulseDb.derivedKeyCache.set(cleanKey, derived);
+    return derived;
   }
 
   private cacheSite(site: SiteRecord): void {
@@ -161,7 +177,7 @@ export class TrafficPulseDb {
   }
 
   /**
-   * Finds a site by its raw API key by computing its SHA-256 hash.
+   * Finds a site by its raw API key by computing its scrypt KDF hash.
    */
   public async getSiteByApiKey(apiKey: string): Promise<SiteRecord | null> {
     const hash = TrafficPulseDb.hashApiKey(apiKey);
@@ -244,7 +260,6 @@ export class TrafficPulseDb {
    * Records an ingested event persistently with idempotency support.
    */
   public async recordEvent(event: Omit<StoredEvent, 'id'>): Promise<{ event: StoredEvent; isDuplicate: boolean }> {
-    // If an idempotency key is supplied, check for existing event within this site
     if (event.idempotencyKey) {
       const existing = await prisma.event.findUnique({
         where: {
@@ -549,7 +564,6 @@ export class TrafficPulseDb {
     };
     if (siteId) where.siteId = siteId;
 
-    // Fetch bounded events in the 12-hour window using compound index (siteId, isDemo, timestamp)
     const events = await prisma.event.findMany({
       where,
       select: {
@@ -560,7 +574,6 @@ export class TrafficPulseDb {
       take: maxRows,
     });
 
-    // Initialize 12 hourly buckets with unambiguous UTC keys (YYYY-MM-DDTHH:00:00Z)
     const buckets: Record<
       string,
       {

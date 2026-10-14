@@ -11,8 +11,8 @@ model Site {
   id             String   @id @default(cuid())
   name           String
   domain         String   @unique
-  apiKey         String?  // Legacy plaintext (nullable for migration)
-  keyHash        String   @unique // SHA-256 hash of API key
+  apiKey         String?  // Legacy plaintext (nullable for migration; never populated on new sites)
+  keyHash        String   @unique // scrypt KDF hash of API key
   isRevoked      Boolean  @default(false)
   isDemo         Boolean  @default(false)
   createdAt      DateTime @default(now())
