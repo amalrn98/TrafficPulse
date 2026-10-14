@@ -5,12 +5,16 @@ import { createTrafficPulseMiddleware } from '../src/express';
 import { trafficPulseWorker } from '../src/cloudflare';
 import { dispatchEventWithRetry } from '../src/dispatch';
 
-test('Next.js Middleware - Classifies requests and triggers hook', async () => {
+test('Next.js Middleware - Classifies requests, triggers hook, and registers waitUntil', async () => {
   let classifiedResult: any = null;
+  let waitUntilRegistered = false;
 
   const mw = withTrafficPulse({
     siteId: 'site_next_01',
     apiKey: 'tp_live_testkey',
+    apiHost: 'http://127.0.0.1:59999',
+    timeoutMs: 50,
+    maxRetries: 0,
     onClassified: (_req, classification) => {
       classifiedResult = classification;
       if (classification.category === 'generic_bot') {
@@ -36,6 +40,20 @@ test('Next.js Middleware - Classifies requests and triggers hook', async () => {
   assert.ok(result);
   assert.strictEqual(result.category, 'generic_bot');
   assert.strictEqual(result.actorType, 'automation_tool');
+
+  // 3. Verify event.waitUntil is invoked for non-blocked requests on Edge runtime
+  const allowedReq = new Request('https://example.com/home', {
+    headers: {
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128.0',
+      'accept-language': 'en-US,en;q=0.9',
+    },
+  });
+  await mw(allowedReq, {
+    waitUntil: (p: Promise<unknown>) => {
+      waitUntilRegistered = p instanceof Promise;
+    },
+  });
+  assert.strictEqual(waitUntilRegistered, true, 'Next.js middleware must register dispatch promise with event.waitUntil');
 });
 
 test('Express Middleware - Attaches classification to request and sets response headers', () => {

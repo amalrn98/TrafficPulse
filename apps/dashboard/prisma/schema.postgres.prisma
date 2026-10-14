@@ -1,0 +1,65 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Site {
+  id             String   @id @default(cuid())
+  name           String
+  domain         String   @unique
+  apiKey         String?  // Legacy plaintext (nullable for migration)
+  keyHash        String   @unique // SHA-256 hash of API key
+  isRevoked      Boolean  @default(false)
+  isDemo         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  events         Event[]
+
+  @@index([isDemo])
+  @@index([isRevoked])
+}
+
+model Event {
+  id                 String   @id @default(cuid())
+  siteId             String
+  site               Site     @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  idempotencyKey     String?
+  timestamp          DateTime @default(now())
+  path               String
+  method             String   @default("GET")
+
+  // Epistemic classification fields
+  actorType          String   @default("unknown") // 'human_browser' | 'ai_crawler' | 'ai_agent' | 'search_crawler' | 'automation_tool' | 'unknown'
+  actorName          String?
+  activityType       String   @default("page_view") // 'page_view' | 'content_fetch' | 'api_query' | 'unknown'
+  verificationStatus String   @default("unverified") // 'verified' | 'claimed' | 'inferred' | 'unverified' | 'unknown'
+  confidence         Float    @default(0.0) // Heuristic score between 0.0 and 1.0
+  evidence           String?  // JSON array of evidence codes
+
+  // Backward-compatible category fields
+  trafficCategory    String   // 'human' | 'llm_training' | 'ai_agent' | 'search_engine' | 'generic_bot'
+  botIdentifier      String?
+  actorFamily        String?
+  intent             String?
+  verifiedOrigin     Boolean  @default(false)
+
+  // Request details
+  userAgent          String
+  ip                 String?
+  referer            String?
+  statusCode         Int      @default(200)
+  durationMs         Int?
+  clientHints        String?  // JSON stringified telemetry
+  isDemo             Boolean  @default(false)
+
+  @@unique([siteId, idempotencyKey])
+  @@index([siteId, isDemo, timestamp])
+  @@index([siteId, timestamp])
+  @@index([siteId, actorType])
+  @@index([trafficCategory])
+  @@index([actorType])
+  @@index([botIdentifier])
+}

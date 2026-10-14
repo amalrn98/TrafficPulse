@@ -12,7 +12,7 @@ COPY packages/middleware/package.json ./packages/middleware/
 COPY apps/dashboard/package.json ./apps/dashboard/
 RUN npm ci
 
-# Stage 2: Build packages and Next.js standalone output
+# Stage 2: Build packages and Next.js standalone output (using PostgreSQL Prisma schema)
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
@@ -21,7 +21,7 @@ ENV NODE_ENV=production
 RUN npm run build --workspace=@trafficpulse/classifier
 RUN npm run build --workspace=@trafficpulse/tracker
 RUN npm run build --workspace=@trafficpulse/middleware
-RUN npx prisma generate --schema=apps/dashboard/prisma/schema.prisma
+RUN npx prisma generate --schema=apps/dashboard/prisma/schema.postgres.prisma
 RUN npm run build --workspace=@trafficpulse/dashboard
 
 # Stage 3: Minimal production runner

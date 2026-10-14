@@ -5,7 +5,6 @@ import {
   Activity,
   Bot,
   BrainCircuit,
-  Search,
   Users,
   ShieldAlert,
   Code2,
@@ -18,7 +17,6 @@ import {
   Plus,
   RefreshCw,
   ExternalLink,
-  Sliders,
   ChevronRight,
   ShieldCheck,
   AlertTriangle,
@@ -29,7 +27,7 @@ interface Site {
   id: string;
   name: string;
   domain: string;
-  apiKey: string;
+  apiKey?: string;
   isDemo: boolean;
 }
 
@@ -102,20 +100,56 @@ export default function DashboardPage() {
   const [copiedNext, setCopiedNext] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Admin authentication state for production deployments
+  const [adminKey, setAdminKey] = useState<string>('');
+  const [adminKeyInput, setAdminKeyInput] = useState<string>('');
+  const [isAuthRequired, setIsAuthRequired] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string>('');
+
+  // Newly created one-time API key state
+  const [oneTimeKeys, setOneTimeKeys] = useState<Record<string, string>>({});
+
   // New site modal / input
   const [isNewSiteModalOpen, setIsNewSiteModalOpen] = useState(false);
   const [newDomain, setNewDomain] = useState('');
   const [newName, setNewName] = useState('');
   const [isCreatingSite, setIsCreatingSite] = useState(false);
 
-  const fetchData = async () => {
+  useEffect(() => {
+    try {
+      const savedKey = window.sessionStorage.getItem('tp_admin_key');
+      if (savedKey) {
+        setAdminKey(savedKey);
+      }
+    } catch {
+      // Ignore storage restrictions
+    }
+  }, []);
+
+  const buildAuthHeaders = (overrideKey?: string): Record<string, string> => {
+    const keyToUse = overrideKey !== undefined ? overrideKey : adminKey;
+    if (keyToUse) {
+      return { 'X-Admin-Key': keyToUse };
+    }
+    return {};
+  };
+
+  const fetchData = async (overrideKey?: string) => {
     setIsRefreshing(true);
     try {
       const url = selectedSiteId
         ? `/api/v1/analytics?siteId=${encodeURIComponent(selectedSiteId)}`
         : '/api/v1/analytics';
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: buildAuthHeaders(overrideKey),
+      });
+      if (res.status === 401) {
+        setIsAuthRequired(true);
+        return;
+      }
       if (res.ok) {
+        setIsAuthRequired(false);
+        setAuthError('');
         const json = await res.json();
         setData(json);
         if (!selectedSiteId && json.selectedSite) {
@@ -131,10 +165,42 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 8000);
+    const interval = setInterval(() => fetchData(), 8000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSiteId]);
+  }, [selectedSiteId, adminKey]);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = adminKeyInput.trim();
+    if (!trimmed) return;
+    try {
+      const res = await fetch('/api/v1/analytics', {
+        headers: { 'X-Admin-Key': trimmed },
+      });
+      if (res.status === 401) {
+        setAuthError('Invalid ADMIN_API_KEY. Please check your server configuration.');
+        return;
+      }
+      if (res.ok) {
+        setAdminKey(trimmed);
+        setIsAuthRequired(false);
+        setAuthError('');
+        try {
+          window.sessionStorage.setItem('tp_admin_key', trimmed);
+        } catch {
+          // Ignore storage error
+        }
+        const json = await res.json();
+        setData(json);
+        if (!selectedSiteId && json.selectedSite) {
+          setSelectedSiteId(json.selectedSite.id);
+        }
+      }
+    } catch {
+      setAuthError('Unable to reach server.');
+    }
+  };
 
   const copyToClipboard = (text: string, type: 'script' | 'next') => {
     navigator.clipboard.writeText(text);
@@ -154,9 +220,16 @@ export default function DashboardPage() {
     try {
       const res = await fetch('/api/v1/analytics', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildAuthHeaders(),
+        },
         body: JSON.stringify({ domain: newDomain.trim(), name: newName.trim() || undefined }),
       });
+      if (res.status === 401) {
+        setIsAuthRequired(true);
+        return;
+      }
       if (res.ok) {
         const json = await res.json();
         setNewDomain('');
@@ -164,6 +237,10 @@ export default function DashboardPage() {
         setIsNewSiteModalOpen(false);
         if (json.site) {
           setSelectedSiteId(json.site.id);
+          if (json.site.apiKey) {
+            setOneTimeKeys((prev) => ({ ...prev, [json.site.id]: json.site.apiKey }));
+            setIsModalOpen(true);
+          }
         }
         await fetchData();
       }
@@ -243,6 +320,10 @@ export default function DashboardPage() {
 
   const isDemoActive = data?.isDemo ?? false;
   const currentSite = data?.selectedSite || data?.sites?.find((s) => s.id === selectedSiteId);
+  const displayedApiKey =
+    (currentSite?.id && oneTimeKeys[currentSite.id]) ||
+    currentSite?.apiKey ||
+    'tp_live_<shown_once_on_site_creation>';
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col font-sans">
@@ -295,7 +376,7 @@ export default function DashboardPage() {
           )}
 
           <button
-            onClick={fetchData}
+            onClick={() => fetchData()}
             title="Refresh analytics data"
             className={`p-1.5 text-slate-400 hover:text-slate-200 rounded-md border border-slate-800 hover:bg-slate-800/60 transition ${
               isRefreshing ? 'animate-spin' : ''
@@ -382,7 +463,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Empty State when no events exist */}
-        {overview.total === 0 && (
+        {overview.total === 0 && !isAuthRequired && (
           <div className="bg-[#0f172a]/80 border border-slate-800 rounded-xl p-10 text-center space-y-4">
             <div className="w-12 h-12 rounded-full bg-indigo-950/80 border border-indigo-700/50 text-indigo-400 flex items-center justify-center mx-auto">
               <Activity className="w-6 h-6" />
@@ -390,7 +471,7 @@ export default function DashboardPage() {
             <div>
               <h3 className="text-base font-bold text-white">No Ingested Traffic Yet</h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto mt-1">
-                This site currently has zero recorded events. TrafficPulse never fabricates artificial traffic in production. Connect your site using the integration snippet below to begin receiving real-time analytics.
+                This site currently has zero recorded events in the past 24 hours. TrafficPulse never fabricates artificial traffic in production. Connect your site using the integration snippet below to begin receiving real-time analytics.
               </p>
             </div>
             <button
@@ -502,7 +583,7 @@ export default function DashboardPage() {
                     <Bot className="w-4 h-4 text-indigo-400" />
                     <span>Top Identified Actors</span>
                   </h3>
-                  <span className="text-[11px] text-slate-400 font-mono">By Request Volume</span>
+                  <span className="text-[11px] text-slate-400 font-mono">By Request Volume (24h)</span>
                 </div>
 
                 <div className="space-y-3">
@@ -660,7 +741,7 @@ export default function DashboardPage() {
                 <span>Targeted Endpoints & AI Crawler Breakdown</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Observed endpoint query volume across AI crawlers and human visitors.
+                Observed endpoint query volume across AI crawlers and human visitors in the past 24 hours.
               </p>
             </div>
 
@@ -752,6 +833,44 @@ export default function DashboardPage() {
         )}
       </main>
 
+      {/* ADMIN AUTHENTICATION MODAL (PRODUCTION) */}
+      {isAuthRequired && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#0f172a] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center space-x-2 border-b border-slate-800 pb-3">
+              <ShieldCheck className="w-5 h-5 text-indigo-400" />
+              <h2 className="text-base font-bold text-white">Admin Authentication Required</h2>
+            </div>
+            <p className="text-xs text-slate-400">
+              Enter your configured <code className="text-indigo-300">ADMIN_API_KEY</code> to access production analytics and site management.
+            </p>
+            {authError && (
+              <div className="p-2.5 rounded bg-red-950/60 border border-red-800 text-xs text-red-300">
+                {authError}
+              </div>
+            )}
+            <form onSubmit={handleAdminLogin} className="space-y-3">
+              <input
+                type="password"
+                required
+                placeholder="Enter ADMIN_API_KEY..."
+                value={adminKeyInput}
+                onChange={(e) => setAdminKeyInput(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+              />
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition shadow"
+                >
+                  Unlock Dashboard
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* INTEGRATION MODAL */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
@@ -777,7 +896,7 @@ export default function DashboardPage() {
             <div className="space-y-4">
               <div className="bg-slate-900/80 p-3 rounded-lg border border-slate-800 text-xs space-y-1 font-mono">
                 <div className="text-slate-400">Site ID: <span className="text-white font-bold">{currentSite?.id || selectedSiteId}</span></div>
-                <div className="text-slate-400">Server API Key: <span className="text-indigo-400 font-bold">{currentSite?.apiKey || 'tp_live_...'}</span></div>
+                <div className="text-slate-400">Server API Key: <span className="text-indigo-400 font-bold">{displayedApiKey}</span></div>
               </div>
 
               <div>
@@ -812,14 +931,14 @@ import { withTrafficPulse } from '@trafficpulse/middleware';
 
 export default withTrafficPulse({
   siteId: '${currentSite?.id || selectedSiteId}',
-  apiKey: '${currentSite?.apiKey || 'tp_live_...'}',
+  apiKey: '${displayedApiKey}',
   apiHost: '${typeof window !== 'undefined' ? window.location.origin : 'https://trafficpulse.mycompany.io'}',
 });`}
                   </pre>
                   <button
                     onClick={() =>
                       copyToClipboard(
-                        `import { withTrafficPulse } from '@trafficpulse/middleware';\n\nexport default withTrafficPulse({\n  siteId: '${currentSite?.id || selectedSiteId}',\n  apiKey: '${currentSite?.apiKey || 'tp_live_...'}',\n  apiHost: '${typeof window !== 'undefined' ? window.location.origin : 'https://trafficpulse.mycompany.io'}',\n});`,
+                        `import { withTrafficPulse } from '@trafficpulse/middleware';\n\nexport default withTrafficPulse({\n  siteId: '${currentSite?.id || selectedSiteId}',\n  apiKey: '${displayedApiKey}',\n  apiHost: '${typeof window !== 'undefined' ? window.location.origin : 'https://trafficpulse.mycompany.io'}',\n});`,
                         'next'
                       )
                     }
@@ -912,7 +1031,7 @@ export default withTrafficPulse({
         </div>
         <div className="flex items-center space-x-4 mt-2 sm:mt-0">
           <a
-            href="https://github.com/mythicavalon/TrafficPulse"
+            href="https://github.com/amalrn98/TrafficPulse"
             target="_blank"
             rel="noopener noreferrer"
             className="hover:text-indigo-400 flex items-center space-x-1"

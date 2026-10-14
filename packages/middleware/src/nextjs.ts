@@ -11,6 +11,10 @@ export interface NextMiddlewareOptions {
   onClassified?: (req: Request, classification: ClassificationResult) => void | Response;
 }
 
+export interface NextFetchEventLike {
+  waitUntil?: (promise: Promise<unknown>) => void;
+}
+
 /**
  * High-performance Next.js Edge Middleware for TrafficPulse.
  * Classifies traffic with zero added origin latency and async telemetry ingestion.
@@ -25,7 +29,7 @@ export function withTrafficPulse(options: NextMiddlewareOptions) {
     '/api/v1/events',
   ];
 
-  return async function middleware(req: Request) {
+  return async function middleware(req: Request, event?: NextFetchEventLike) {
     try {
       const url = new URL(req.url);
 
@@ -98,8 +102,8 @@ export function withTrafficPulse(options: NextMiddlewareOptions) {
           timestamp: new Date().toISOString(),
         };
 
-        // Fire-and-forget async execution with retries and timeout
-        dispatchEventWithRetry({
+        // Register background promise with NextFetchEvent.waitUntil when running on Edge runtimes
+        const dispatchPromise = dispatchEventWithRetry({
           apiHost: options.apiHost,
           siteId: options.siteId,
           apiKey: options.apiKey,
@@ -107,6 +111,10 @@ export function withTrafficPulse(options: NextMiddlewareOptions) {
           timeoutMs: options.timeoutMs,
           maxRetries: options.maxRetries,
         }).catch(() => {});
+
+        if (event && typeof event.waitUntil === 'function') {
+          event.waitUntil(dispatchPromise);
+        }
       }
     } catch {
       // Ultimate fail-open guard

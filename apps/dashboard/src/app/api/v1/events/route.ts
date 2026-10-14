@@ -11,11 +11,16 @@ import { randomUUID } from 'crypto';
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB limit
 
 function buildCorsHeaders(origin: string | null, siteDomain?: string) {
-  let allowedOrigin = '*';
+  let allowedOrigin = 'null';
   if (siteDomain && origin) {
     try {
       const originUrl = new URL(origin);
-      if (originUrl.hostname === siteDomain || originUrl.hostname.endsWith(`.${siteDomain}`)) {
+      const host = originUrl.hostname.toLowerCase();
+      const target = siteDomain.toLowerCase();
+      const isLocalDev =
+        process.env.NODE_ENV !== 'production' && (host === 'localhost' || host === '127.0.0.1');
+
+      if (host === target || host.endsWith(`.${target}`) || isLocalDev) {
         allowedOrigin = origin;
       } else {
         allowedOrigin = 'null';
@@ -23,7 +28,7 @@ function buildCorsHeaders(origin: string | null, siteDomain?: string) {
     } catch {
       allowedOrigin = 'null';
     }
-  } else if (origin) {
+  } else if (!siteDomain && origin && process.env.NODE_ENV !== 'production') {
     allowedOrigin = origin;
   }
 
@@ -32,14 +37,21 @@ function buildCorsHeaders(origin: string | null, siteDomain?: string) {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-Api-Key, X-Idempotency-Key, X-Request-Id',
     'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
   };
 }
 
 export async function OPTIONS(req: NextRequest) {
   const origin = req.headers.get('origin');
+  const siteId = req.nextUrl.searchParams.get('siteId');
+  let siteDomain: string | undefined;
+  if (siteId) {
+    const site = await dbStore.getSiteById(siteId);
+    siteDomain = site?.domain;
+  }
   return new NextResponse(null, {
     status: 204,
-    headers: buildCorsHeaders(origin),
+    headers: buildCorsHeaders(origin, siteDomain),
   });
 }
 
@@ -48,7 +60,7 @@ export async function POST(req: NextRequest) {
   const requestId = req.headers.get('x-request-id') || randomUUID();
   const origin = req.headers.get('origin');
   const baseCorsHeaders = buildCorsHeaders(origin);
-  const corsHeaders = {
+  let corsHeaders: Record<string, string> = {
     ...baseCorsHeaders,
     'X-Request-Id': requestId,
   };
@@ -139,17 +151,18 @@ export async function POST(req: NextRequest) {
 
   try {
     // 5. Site Authentication & Tenant Isolation
-    let site = await dbStore.getSiteById(payload.siteId);
-
-    // Support server-to-server middleware authentication via API key
     const authHeader = req.headers.get('authorization') || '';
     const apiKeyHeader = req.headers.get('x-api-key') || '';
     const candidateApiKey = authHeader.startsWith('Bearer ')
       ? authHeader.substring(7).trim()
       : apiKeyHeader.trim();
 
+    let site = candidateApiKey
+      ? await dbStore.getSiteByApiKey(candidateApiKey)
+      : await dbStore.getSiteById(payload.siteId);
+
     if (!site && candidateApiKey) {
-      site = await dbStore.getSiteByApiKey(candidateApiKey);
+      site = await dbStore.getSiteById(payload.siteId);
     }
 
     if (!site) {
@@ -165,6 +178,31 @@ export async function POST(req: NextRequest) {
           message: `Site '${payload.siteId}' is not registered with TrafficPulse.`,
         },
         { status: 401, headers: corsHeaders }
+      );
+    }
+
+    // Recompute domain-scoped CORS headers against registered site domain (SEC-05)
+    corsHeaders = {
+      ...buildCorsHeaders(origin, site.domain),
+      'X-Request-Id': requestId,
+    };
+
+    // Enforce Origin match when an unauthenticated browser beacon includes an Origin header
+    if (origin && !candidateApiKey && corsHeaders['Access-Control-Allow-Origin'] === 'null') {
+      metricsRegistry.recordIngestRejection('origin_mismatch');
+      logger.warn('Event rejected: origin does not match registered site domain', {
+        requestId,
+        siteId: site.id,
+        origin,
+        expectedDomain: site.domain,
+      });
+      return NextResponse.json(
+        {
+          error: 'Forbidden',
+          code: 'ORIGIN_MISMATCH',
+          message: 'Request origin does not match registered site domain',
+        },
+        { status: 403, headers: corsHeaders }
       );
     }
 

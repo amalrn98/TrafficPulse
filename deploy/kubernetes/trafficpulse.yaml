@@ -14,16 +14,34 @@ spec:
     metadata:
       labels:
         app: trafficpulse
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/api/metrics"
+        prometheus.io/port: "3000"
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
       containers:
         - name: trafficpulse
-          image: ghcr.io/amalrn98/trafficpulse:latest
+          image: ghcr.io/amalrn98/trafficpulse:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           envFrom:
             - secretRef:
                 name: trafficpulse-env
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
           resources:
             requests:
               cpu: 250m
@@ -43,6 +61,9 @@ spec:
               port: 3000
             initialDelaySeconds: 20
             periodSeconds: 10
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -57,4 +78,50 @@ spec:
       port: 80
       targetPort: 3000
   type: ClusterIP
-
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: trafficpulse-hpa
+  namespace: trafficpulse
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: trafficpulse-dashboard
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trafficpulse-pdb
+  namespace: trafficpulse
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: trafficpulse
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: trafficpulse-network-policy
+  namespace: trafficpulse
+spec:
+  podSelector:
+    matchLabels:
+      app: trafficpulse
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 3000

@@ -16,6 +16,11 @@ let siteA;
 let siteB;
 
 before(async () => {
+  // Remove any leftover test sites first so creation returns the one-time raw API key
+  await prisma.site.deleteMany({
+    where: { domain: { in: ['tenant-a.com', 'tenant-b.com'] } },
+  });
+
   // Setup clean test sites
   siteA = await dbStore.getOrCreateSite('tenant-a.com', 'Tenant A Production', false);
   siteB = await dbStore.getOrCreateSite('tenant-b.com', 'Tenant B Production', false);
@@ -37,15 +42,21 @@ after(async () => {
   await prisma.$disconnect();
 });
 
-test('Database Persistence - Registers sites with secure API keys and flags', async () => {
+test('Database Persistence - Registers sites with hashed API keys without persisting plaintext keys', async () => {
   assert.ok(siteA.id);
   assert.strictEqual(siteA.domain, 'tenant-a.com');
   assert.ok(siteA.apiKey.startsWith('tp_live_'));
   assert.strictEqual(siteA.isDemo, false);
 
+  // Verify raw API key is NOT stored in plaintext in the database (SEC-02)
+  const rawDbSite = await prisma.site.findUnique({ where: { id: siteA.id } });
+  assert.strictEqual(rawDbSite?.apiKey, null, 'Plaintext API key must never be persisted on disk');
+  assert.ok(rawDbSite?.keyHash, 'SHA-256 keyHash must be persisted');
+
+  // Subsequent fetches by ID must not expose the raw API key
   const fetched = await dbStore.getSiteById(siteA.id);
   assert.strictEqual(fetched?.domain, 'tenant-a.com');
-  assert.strictEqual(fetched?.apiKey, siteA.apiKey);
+  assert.strictEqual(fetched?.apiKey, undefined);
 
   const byApiKey = await dbStore.getSiteByApiKey(siteA.apiKey);
   assert.strictEqual(byApiKey?.id, siteA.id);
@@ -212,4 +223,3 @@ test('Data Lifecycle - Supports retention pruning and per-site deletion', async 
   const overviewB = await dbStore.getOverview(siteB.id, false);
   assert.strictEqual(overviewB.total, 0, 'Site B should have 0 events after deletion');
 });
-

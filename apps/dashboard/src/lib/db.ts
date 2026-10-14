@@ -25,7 +25,7 @@ export interface StoredEvent {
   referer?: string | null;
   statusCode: number;
   durationMs?: number | null;
-  clientHints?: any;
+  clientHints?: Record<string, unknown> | null;
   isDemo: boolean;
 }
 
@@ -33,14 +33,24 @@ export interface SiteRecord {
   id: string;
   name: string;
   domain: string;
-  apiKey?: string; // Only present when newly created or explicitly returned during creation/rotation
+  apiKey?: string; // Only present once in memory when newly created; never persisted in DB
   keyHash?: string;
   isRevoked?: boolean;
   isDemo: boolean;
   createdAt: string;
 }
 
+interface CachedEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
+const SITE_CACHE_TTL_MS = 60 * 1000;
+
 export class TrafficPulseDb {
+  private siteByIdCache = new Map<string, CachedEntry<SiteRecord>>();
+  private siteByKeyHashCache = new Map<string, CachedEntry<SiteRecord>>();
+
   /**
    * Generates a cryptographically secure random API key for site authentication.
    */
@@ -55,9 +65,21 @@ export class TrafficPulseDb {
     return crypto.createHash('sha256').update(apiKey.trim()).digest('hex');
   }
 
+  private cacheSite(site: SiteRecord): void {
+    const sanitized: SiteRecord = {
+      ...site,
+      apiKey: undefined, // Never cache raw key
+    };
+    const expiresAt = Date.now() + SITE_CACHE_TTL_MS;
+    this.siteByIdCache.set(sanitized.id, { value: sanitized, expiresAt });
+    if (sanitized.keyHash) {
+      this.siteByKeyHashCache.set(sanitized.keyHash, { value: sanitized, expiresAt });
+    }
+  }
+
   /**
    * Retrieves or creates a site record in the persistent database.
-   * If creating a new site, returns the raw apiKey once.
+   * If creating a new site, returns the raw apiKey once without persisting it in plaintext.
    */
   public async getOrCreateSite(domain: string, name?: string, isDemo = false): Promise<SiteRecord> {
     const cleanDomain = domain.trim().toLowerCase();
@@ -66,16 +88,18 @@ export class TrafficPulseDb {
     });
 
     if (existing) {
-      return {
+      const record: SiteRecord = {
         id: existing.id,
         name: existing.name,
         domain: existing.domain,
-        apiKey: existing.apiKey || undefined,
+        apiKey: undefined, // Never expose persisted plaintext keys
         keyHash: existing.keyHash,
         isRevoked: existing.isRevoked,
         isDemo: existing.isDemo,
         createdAt: existing.createdAt.toISOString(),
       };
+      this.cacheSite(record);
+      return record;
     }
 
     const rawKey = TrafficPulseDb.generateApiKey();
@@ -85,13 +109,13 @@ export class TrafficPulseDb {
       data: {
         domain: cleanDomain,
         name: name || cleanDomain,
-        apiKey: rawKey,
+        apiKey: null, // Never persist raw API keys on disk (SEC-02)
         keyHash,
         isDemo,
       },
     });
 
-    return {
+    const record: SiteRecord = {
       id: created.id,
       name: created.name,
       domain: created.domain,
@@ -101,26 +125,39 @@ export class TrafficPulseDb {
       isDemo: created.isDemo,
       createdAt: created.createdAt.toISOString(),
     };
+    this.cacheSite(record);
+    return record;
   }
 
   /**
-   * Finds a site by its primary ID.
+   * Finds a site by its primary ID with in-memory TTL caching.
    */
   public async getSiteById(siteId: string): Promise<SiteRecord | null> {
+    const cached = this.siteByIdCache.get(siteId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value.isRevoked ? null : cached.value;
+    }
+
     const site = await prisma.site.findUnique({
       where: { id: siteId },
     });
-    if (!site || site.isRevoked) return null;
-    return {
+    if (!site || site.isRevoked) {
+      this.siteByIdCache.delete(siteId);
+      return null;
+    }
+
+    const record: SiteRecord = {
       id: site.id,
       name: site.name,
       domain: site.domain,
-      apiKey: site.apiKey || undefined,
+      apiKey: undefined,
       keyHash: site.keyHash,
       isRevoked: site.isRevoked,
       isDemo: site.isDemo,
       createdAt: site.createdAt.toISOString(),
     };
+    this.cacheSite(record);
+    return record;
   }
 
   /**
@@ -128,26 +165,34 @@ export class TrafficPulseDb {
    */
   public async getSiteByApiKey(apiKey: string): Promise<SiteRecord | null> {
     const hash = TrafficPulseDb.hashApiKey(apiKey);
+    const cached = this.siteByKeyHashCache.get(hash);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value.isRevoked ? null : cached.value;
+    }
+
     const site = await prisma.site.findFirst({
       where: {
         OR: [
           { keyHash: hash },
-          { apiKey: apiKey }, // Backward-compatibility fallback
+          { apiKey: apiKey }, // Legacy migration fallback
         ],
         isRevoked: false,
       },
     });
     if (!site) return null;
-    return {
+
+    const record: SiteRecord = {
       id: site.id,
       name: site.name,
       domain: site.domain,
-      apiKey: site.apiKey || undefined,
+      apiKey: undefined,
       keyHash: site.keyHash,
       isRevoked: site.isRevoked,
       isDemo: site.isDemo,
       createdAt: site.createdAt.toISOString(),
     };
+    this.cacheSite(record);
+    return record;
   }
 
   /**
@@ -303,10 +348,14 @@ export class TrafficPulseDb {
   }
 
   /**
-   * Computes executive overview metrics at database level.
+   * Computes executive overview metrics at database level within the active window (default 24h).
    */
-  public async getOverview(siteId?: string, isDemo = false) {
-    const where: any = { isDemo };
+  public async getOverview(siteId?: string, isDemo = false, windowHours = 24) {
+    const startTime = new Date(Date.now() - windowHours * 3600 * 1000);
+    const where: Record<string, unknown> = {
+      isDemo,
+      timestamp: { gte: startTime },
+    };
     if (siteId) where.siteId = siteId;
 
     const grouped = await prisma.event.groupBy({
@@ -346,16 +395,22 @@ export class TrafficPulseDb {
   }
 
   /**
-   * Computes top identified actors aggregated at the database level.
+   * Computes top identified actors aggregated and bounded at the database level.
    */
-  public async getTopActors(siteId?: string, limit = 8, isDemo = false) {
-    const where: any = { isDemo };
+  public async getTopActors(siteId?: string, limit = 8, isDemo = false, windowHours = 24) {
+    const startTime = new Date(Date.now() - windowHours * 3600 * 1000);
+    const where: Record<string, unknown> = {
+      isDemo,
+      timestamp: { gte: startTime },
+    };
     if (siteId) where.siteId = siteId;
 
     const grouped = await prisma.event.groupBy({
       by: ['botIdentifier', 'trafficCategory', 'verifiedOrigin'],
       where,
       _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: limit * 4,
     });
 
     const actorCounts: Record<string, { count: number; category: TrafficCategory; verified: number }> = {};
@@ -389,16 +444,22 @@ export class TrafficPulseDb {
   }
 
   /**
-   * Computes top endpoints aggregated at the database level.
+   * Computes top endpoints aggregated and bounded at the database level.
    */
-  public async getTopEndpoints(siteId?: string, limit = 8, isDemo = false) {
-    const where: any = { isDemo };
+  public async getTopEndpoints(siteId?: string, limit = 8, isDemo = false, windowHours = 24) {
+    const startTime = new Date(Date.now() - windowHours * 3600 * 1000);
+    const where: Record<string, unknown> = {
+      isDemo,
+      timestamp: { gte: startTime },
+    };
     if (siteId) where.siteId = siteId;
 
     const grouped = await prisma.event.groupBy({
       by: ['path', 'trafficCategory'],
       where,
       _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+      take: limit * 5,
     });
 
     const pathCounts: Record<string, { total: number; ai: number; human: number }> = {};
@@ -436,7 +497,7 @@ export class TrafficPulseDb {
    * Returns recent live events with pagination and index support.
    */
   public async getLiveEvents(siteId?: string, limit = 25, isDemo = false): Promise<StoredEvent[]> {
-    const where: any = { isDemo };
+    const where: Record<string, unknown> = { isDemo };
     if (siteId) where.siteId = siteId;
 
     const events = await prisma.event.findMany({
@@ -475,26 +536,28 @@ export class TrafficPulseDb {
 
   /**
    * Generates unambiguous UTC date-hour buckets for timeseries charts.
-   * Eliminates single-hour cross-day merging bugs.
+   * Eliminates single-hour cross-day merging bugs and bounds row retrieval.
    */
-  public async getTimeseries(siteId?: string, isDemo = false) {
+  public async getTimeseries(siteId?: string, isDemo = false, maxRows = 50000) {
     const now = Date.now();
     const windowHours = 12;
     const startTime = new Date(now - windowHours * 3600 * 1000);
 
-    const where: any = {
+    const where: Record<string, unknown> = {
       isDemo,
       timestamp: { gte: startTime },
     };
     if (siteId) where.siteId = siteId;
 
-    // Fetch only events in the 12-hour window
+    // Fetch bounded events in the 12-hour window using compound index (siteId, isDemo, timestamp)
     const events = await prisma.event.findMany({
       where,
       select: {
         timestamp: true,
         trafficCategory: true,
       },
+      orderBy: { timestamp: 'desc' },
+      take: maxRows,
     });
 
     // Initialize 12 hourly buckets with unambiguous UTC keys (YYYY-MM-DDTHH:00:00Z)

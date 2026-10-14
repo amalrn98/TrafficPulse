@@ -49,7 +49,7 @@ jobs:
       - name: Lint Workspaces
         run: npm run lint
 
-      - name: Setup Prisma Database Client
+      - name: Setup Prisma Database Client (SQLite Local Mode)
         run: |
           npm run db:generate --workspace=@trafficpulse/dashboard
           npm run db:push --workspace=@trafficpulse/dashboard
@@ -57,8 +57,16 @@ jobs:
       - name: Build All Workspaces
         run: npm run build
 
-      - name: Run Test Suite
+      - name: Run Full Test Suite (SQLite)
         run: npm test
+
+      - name: Run Dashboard Integration Tests Against PostgreSQL 16
+        env:
+          DATABASE_URL: "postgresql://trafficpulse:trafficpulse_password@localhost:5432/trafficpulse?schema=public"
+        run: |
+          npm run db:generate:postgres --workspace=@trafficpulse/dashboard
+          npm run db:push:postgres --workspace=@trafficpulse/dashboard
+          npm test --workspace=@trafficpulse/dashboard
 
       - name: Validate Docker Compose Configuration
         run: |
