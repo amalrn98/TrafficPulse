@@ -17,21 +17,9 @@ function safeCompareStrings(candidate: string, secret: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-function readCookieValue(cookieHeader: string | null, name: string): string {
-  if (!cookieHeader) return '';
-  const parts = cookieHeader.split(';');
-  for (const part of parts) {
-    const [k, ...rest] = part.trim().split('=');
-    if (k === name) {
-      return decodeURIComponent(rest.join('='));
-    }
-  }
-  return '';
-}
-
 /**
  * Validates admin authentication via ADMIN_API_KEY environment variable.
- * Accepts header Authorization: Bearer <key>, X-Admin-Key: <key>, or tp_admin_key cookie.
+ * Accepts header Authorization: Bearer <key> or X-Admin-Key: <key>. Cookie auth is intentionally unsupported (CSRF).
  */
 export function verifyAdminAuth(req: NextRequest | Request): { authorized: boolean; error?: string } {
   const adminKey = process.env.ADMIN_API_KEY;
@@ -46,15 +34,12 @@ export function verifyAdminAuth(req: NextRequest | Request): { authorized: boole
 
   const authHeader = req.headers.get('authorization') || '';
   const xAdminKey = req.headers.get('x-admin-key') || '';
-  const cookieKey = readCookieValue(req.headers.get('cookie'), 'tp_admin_key');
 
   let candidate = '';
   if (authHeader.startsWith('Bearer ')) {
     candidate = authHeader.substring(7).trim();
   } else if (xAdminKey) {
     candidate = xAdminKey.trim();
-  } else if (cookieKey) {
-    candidate = cookieKey.trim();
   }
 
   if (!safeCompareStrings(candidate, adminKey)) {

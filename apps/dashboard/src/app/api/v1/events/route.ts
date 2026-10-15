@@ -10,6 +10,28 @@ import { randomUUID } from 'crypto';
 
 const MAX_PAYLOAD_BYTES = 64 * 1024; // 64 KB limit
 
+/**
+ * Reads the request body up to maxBytes. Returns null if the limit is exceeded.
+ * Unlike trusting Content-Length, this also bounds chunked transfers.
+ */
+async function readBodyWithLimit(req: NextRequest, maxBytes: number): Promise<string | null> {
+  if (!req.body) return '';
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
 function buildCorsHeaders(origin: string | null, siteDomain?: string) {
   let allowedOrigin = 'null';
   if (siteDomain && origin) {
@@ -80,10 +102,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 2. Parse JSON body safely
+  // 2. Read body with a hard byte cap (also covers chunked bodies without Content-Length), then parse JSON
   let rawBody: unknown;
   try {
-    rawBody = await req.json();
+    const bodyText = await readBodyWithLimit(req, MAX_PAYLOAD_BYTES);
+    if (bodyText === null) {
+      metricsRegistry.recordIngestRejection('payload_too_large');
+      logger.warn('Event rejected: payload too large (streamed)', { requestId, maxBytes: MAX_PAYLOAD_BYTES });
+      return NextResponse.json(
+        { error: 'Payload Too Large', code: 'PAYLOAD_TOO_LARGE', maxBytes: MAX_PAYLOAD_BYTES },
+        { status: 413, headers: corsHeaders }
+      );
+    }
+    rawBody = JSON.parse(bodyText);
   } catch {
     metricsRegistry.recordIngestRejection('invalid_json');
     logger.warn('Event rejected: invalid JSON body', { requestId });
@@ -157,11 +188,20 @@ export async function POST(req: NextRequest) {
       ? authHeader.substring(7).trim()
       : apiKeyHeader.trim();
 
-    let site = candidateApiKey
-      ? await dbStore.getSiteByApiKey(candidateApiKey)
-      : await dbStore.getSiteById(payload.siteId);
-
-    if (!site && candidateApiKey) {
+    // A supplied API key must be valid. It is never silently downgraded to a siteId-only lookup.
+    // Keyless requests (browser beacon) are still resolved by siteId and subject to the Origin check below.
+    let site;
+    if (candidateApiKey) {
+      site = await dbStore.getSiteByApiKey(candidateApiKey);
+      if (!site) {
+        metricsRegistry.recordIngestRejection('unauthorized');
+        logger.warn('Event rejected: invalid API key', { requestId, siteId: payload.siteId });
+        return NextResponse.json(
+          { error: 'Unauthorized', code: 'INVALID_API_KEY', message: 'Invalid or revoked API key' },
+          { status: 401, headers: corsHeaders }
+        );
+      }
+    } else {
       site = await dbStore.getSiteById(payload.siteId);
     }
 

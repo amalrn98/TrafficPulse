@@ -1,5 +1,5 @@
-# Multi-stage production Dockerfile pinned to Node 22 LTS
-FROM node:22.14-alpine AS base
+# Multi-stage production Dockerfile on Node 22 LTS (floating 22.x patch; pin by digest in release builds)
+FROM node:22-alpine AS base
 RUN apk add --no-cache libc6-compat openssl wget
 
 # Stage 1: Install dependencies with lockfile

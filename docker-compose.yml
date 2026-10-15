@@ -13,8 +13,11 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_URL=postgresql://trafficpulse:secretpassword@postgres:5432/trafficpulse?schema=public
+      - DATABASE_URL=postgresql://trafficpulse:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/trafficpulse?schema=public
       - REDIS_URL=redis://redis:6379
+      - ADMIN_API_KEY=${ADMIN_API_KEY:?set ADMIN_API_KEY in .env}
+      - API_KEY_SALT=${API_KEY_SALT:?set API_KEY_SALT in .env}
+      - TRUST_PROXY=${TRUST_PROXY:-false}
     depends_on:
       postgres:
         condition: service_healthy
@@ -35,7 +38,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: trafficpulse
-      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: trafficpulse
     volumes:
       - postgres_data:/var/lib/postgresql/data
