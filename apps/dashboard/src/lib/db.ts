@@ -4,8 +4,6 @@ import crypto from 'crypto';
 import { promisify } from 'util';
 
 const scryptAsync = promisify(crypto.scrypt) as (pw: string, salt: string, len: number) => Promise<Buffer>;
-// Process-local key for the in-memory cache index (not a stored hash)
-const CACHE_INDEX_KEY = crypto.randomBytes(32);
 const API_KEY_FORMAT = /^tp_live_[0-9a-f]{36}$/;
 
 export interface StoredEvent {
@@ -89,23 +87,14 @@ export class TrafficPulseDb {
   }
 
   /**
-   * Non-blocking variant used for request-time lookups. scryptSync would stall the
-   * event loop (about 40 ms per call) for every attacker-supplied key.
-   * Cache keys are SHA-256 of the key so raw keys are never held in memory.
+   * Non-blocking derivation used for request-time lookups. scryptSync would stall the
+   * event loop (about 40 ms per call) for every attacker-supplied key. Nothing is cached
+   * here: only keys that match a site are cached (see getSiteByApiKey), so attacker-chosen
+   * keys can neither fill nor evict the cache.
    */
   public static async hashApiKeyAsync(apiKey: string): Promise<string> {
-    const cleanKey = apiKey.trim();
-    const cacheKey = crypto.createHmac('sha256', CACHE_INDEX_KEY).update(cleanKey).digest('hex');
-    const cached = TrafficPulseDb.derivedKeyCache.get(cacheKey);
-    if (cached) return cached;
     const salt = process.env.API_KEY_SALT || TrafficPulseDb.SCRYPT_SALT_FALLBACK;
-    const derived = (await scryptAsync(cleanKey, salt, 32)).toString('hex');
-    if (TrafficPulseDb.derivedKeyCache.size >= 1000) {
-      const oldest = TrafficPulseDb.derivedKeyCache.keys().next().value;
-      if (oldest !== undefined) TrafficPulseDb.derivedKeyCache.delete(oldest);
-    }
-    TrafficPulseDb.derivedKeyCache.set(cacheKey, derived);
-    return derived;
+    return (await scryptAsync(apiKey.trim(), salt, 32)).toString('hex');
   }
 
   private cacheSite(site: SiteRecord): void {
@@ -212,7 +201,8 @@ export class TrafficPulseDb {
     // Keys we generate have a fixed format; skip the expensive KDF for anything else.
     // Non-matching values can still be legacy plaintext keys, which are a cheap lookup.
     const wellFormed = API_KEY_FORMAT.test(clean);
-    const hash = wellFormed ? await TrafficPulseDb.hashApiKeyAsync(clean) : '';
+    const knownHash = TrafficPulseDb.derivedKeyCache.get(clean);
+    const hash = wellFormed ? knownHash ?? (await TrafficPulseDb.hashApiKeyAsync(clean)) : '';
     const cached = hash ? this.siteByKeyHashCache.get(hash) : undefined;
     if (cached && cached.expiresAt > Date.now()) {
       return cached.value.isRevoked ? null : cached.value;
@@ -228,6 +218,15 @@ export class TrafficPulseDb {
       },
     });
     if (!site) return null;
+
+    // Remember the derivation only for keys that matched a real site (bounded).
+    if (hash && !knownHash) {
+      if (TrafficPulseDb.derivedKeyCache.size >= 1000) {
+        const oldest = TrafficPulseDb.derivedKeyCache.keys().next().value;
+        if (oldest !== undefined) TrafficPulseDb.derivedKeyCache.delete(oldest);
+      }
+      TrafficPulseDb.derivedKeyCache.set(clean, hash);
+    }
 
     const record: SiteRecord = {
       id: site.id,
