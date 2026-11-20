@@ -4,6 +4,8 @@ import crypto from 'crypto';
 import { promisify } from 'util';
 
 const scryptAsync = promisify(crypto.scrypt) as (pw: string, salt: string, len: number) => Promise<Buffer>;
+// Process-local key for the in-memory cache index (not a stored hash)
+const CACHE_INDEX_KEY = crypto.randomBytes(32);
 const API_KEY_FORMAT = /^tp_live_[0-9a-f]{36}$/;
 
 export interface StoredEvent {
@@ -93,7 +95,7 @@ export class TrafficPulseDb {
    */
   public static async hashApiKeyAsync(apiKey: string): Promise<string> {
     const cleanKey = apiKey.trim();
-    const cacheKey = crypto.createHash('sha256').update(cleanKey).digest('hex');
+    const cacheKey = crypto.createHmac('sha256', CACHE_INDEX_KEY).update(cleanKey).digest('hex');
     const cached = TrafficPulseDb.derivedKeyCache.get(cacheKey);
     if (cached) return cached;
     const salt = process.env.API_KEY_SALT || TrafficPulseDb.SCRYPT_SALT_FALLBACK;

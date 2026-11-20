@@ -6,6 +6,8 @@
 import crypto from 'crypto';
 import { NextRequest } from 'next/server';
 
+const COMPARE_KEY = crypto.randomBytes(32);
+
 /** Secrets copied unchanged from .env.example must never grant access. */
 function isPlaceholderSecret(v: string): boolean {
   return /change_this|tp_metrics_secret_token|tp_admin_change/i.test(v);
@@ -13,9 +15,10 @@ function isPlaceholderSecret(v: string): boolean {
 
 function safeCompareStrings(candidate: string, secret: string): boolean {
   if (!candidate || !secret) return false;
-  // Hash both sides so lengths always match and length is not leaked.
-  const a = crypto.createHash('sha256').update(candidate, 'utf8').digest();
-  const b = crypto.createHash('sha256').update(secret, 'utf8').digest();
+  // MAC both sides with a random per-process key so the compared buffers always have equal
+  // length (no length leak). This is not password storage, so a KDF does not apply.
+  const a = crypto.createHmac('sha256', COMPARE_KEY).update(candidate, 'utf8').digest();
+  const b = crypto.createHmac('sha256', COMPARE_KEY).update(secret, 'utf8').digest();
   return crypto.timingSafeEqual(a, b);
 }
 
