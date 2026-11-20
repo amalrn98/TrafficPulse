@@ -1,3 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trafficpulse
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -20,6 +25,8 @@ spec:
         prometheus.io/port: "3000"
     spec:
       securityContext:
+        seccompProfile:
+          type: RuntimeDefault
         runAsNonRoot: true
         runAsUser: 1001
         runAsGroup: 1001
@@ -122,6 +129,12 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    - ports:
+    # Restrict `from` to your ingress controller's namespace/pods. Without a `from` clause every
+    # source is allowed. Adjust the label below to match your cluster.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
         - protocol: TCP
           port: 3000

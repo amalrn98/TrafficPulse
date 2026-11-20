@@ -1,4 +1,19 @@
 services:
+  # One-shot job: creates/updates tables before the app starts.
+  # Uses the builder stage because it contains the Prisma CLI (the runtime image does not).
+  db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    command: ['npx', 'prisma', 'db', 'push', '--schema=apps/dashboard/prisma/schema.postgres.prisma', '--skip-generate']
+    environment:
+      - DATABASE_URL=postgresql://trafficpulse:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/trafficpulse?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
   trafficpulse:
     build:
       context: .
@@ -6,16 +21,19 @@ services:
     container_name: trafficpulse
     restart: unless-stopped
     ports:
-      - '3000:3000'
+      # Loopback only. Put a TLS reverse proxy in front and set TRUST_PROXY=true there.
+      - '127.0.0.1:3000:3000'
     env_file:
       - path: .env
         required: false
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - DATABASE_URL=postgresql://trafficpulse:secretpassword@postgres:5432/trafficpulse?schema=public
+      - DATABASE_URL=postgresql://trafficpulse:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/trafficpulse?schema=public
       - REDIS_URL=redis://redis:6379
     depends_on:
+      db-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -35,7 +53,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: trafficpulse
-      POSTGRES_PASSWORD: secretpassword
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: trafficpulse
     volumes:
       - postgres_data:/var/lib/postgresql/data

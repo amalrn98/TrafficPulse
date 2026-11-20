@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_PATH = join(__dirname, '..', 'packages', 'classifier', 'data', 'ip-ranges.json');
 
-const IPV4_CIDR = /^(\d{1,3}\.){3}\d{1,3}\/([0-9]|[1-2][0-9]|3[0-2])$/;
+const IPV4_CIDR = /^((25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\/([0-9]|[1-2][0-9]|3[0-2])$/;
 const IPV6_CIDR = /^[0-9a-fA-F:]+\/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8])$/;
 
 function isValidCidr(cidr) {
@@ -43,16 +43,20 @@ function validateCidrs(vendorName, cidrs, previousCount) {
   }
 }
 
+const failures = [];
+
 async function fetchJson(url, vendorName) {
   try {
     const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!resp.ok) {
-      console.warn(`[warn] ${vendorName}: HTTP ${resp.status} from ${url}`);
+      console.error(`[error] ${vendorName}: HTTP ${resp.status} from ${url}`);
+      failures.push(vendorName);
       return null;
     }
     return await resp.json();
   } catch (err) {
-    console.warn(`[warn] ${vendorName}: fetch failed: ${err.message}`);
+    console.error(`[error] ${vendorName}: fetch failed: ${err.message}`);
+    failures.push(vendorName);
     return null;
   }
 }
@@ -75,7 +79,7 @@ async function main() {
     anyUpdated = true;
   }
 
-  const anthropicData = await fetchJson('https://www.anthropic.com/claudebot.json', 'Anthropic');
+  const anthropicData = await fetchJson('https://claude.com/crawling/bots.json', 'Anthropic');
   if (anthropicData) {
     let cidrs = [];
     if (Array.isArray(anthropicData.prefixes)) {
@@ -123,6 +127,13 @@ async function main() {
   }
 
   console.log('[info] Perplexity: skipped (no official endpoint confirmed). Update manually.');
+
+  if (failures.length) {
+    // Exit non-zero so the workflow fails visibly instead of leaving stale data unnoticed.
+    console.error(`[error] Vendors not refreshed: ${failures.join(', ')}`);
+    if (anyUpdated) writeFileSync(DATA_PATH, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
+    process.exit(1);
+  }
 
   if (anyUpdated) {
     writeFileSync(DATA_PATH, JSON.stringify(existing, null, 2) + '\n', 'utf-8');

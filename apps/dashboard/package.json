@@ -12,7 +12,7 @@
     "db:push:postgres": "prisma db push --schema=prisma/schema.postgres.prisma",
     "db:generate:postgres": "prisma generate --schema=prisma/schema.postgres.prisma",
     "db:seed": "node scripts/seed-demo.mjs",
-    "test": "node --test tests/validation.test.mjs tests/rate-limit.test.mjs tests/db.test.mjs tests/observability.test.mjs"
+    "test": "node --test tests/validation.test.mjs tests/rate-limit.test.mjs tests/db.test.mjs tests/observability.test.mjs tests/hardening.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

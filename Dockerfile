@@ -42,12 +42,15 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/standalone .
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/public ./apps/dashboard/public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dashboard/prisma ./apps/dashboard/prisma
+# IP range data is read from disk at runtime (cwd=/app => packages/classifier/data)
+COPY --from=builder --chown=nextjs:nodejs /app/packages/classifier/data ./packages/classifier/data
 
 USER nextjs
 
 EXPOSE 3000
 
+# Liveness only: a database blip should not mark the container unhealthy
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/api/health/liveness || exit 1
 
 CMD ["node", "apps/dashboard/server.js"]

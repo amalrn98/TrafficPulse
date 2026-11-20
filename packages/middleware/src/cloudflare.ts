@@ -1,5 +1,5 @@
 import { TrafficClassifier, ClassificationResult } from '@trafficpulse/classifier';
-import { dispatchEventWithRetry } from './dispatch';
+import { dispatchEventWithRetry, pickVisitorHeaders } from './dispatch';
 
 export interface CloudflareWorkerOptions {
   siteId: string;
@@ -70,6 +70,8 @@ export function trafficPulseWorker(
         method: request.method,
         userAgent: ua,
         referer: request.headers.get('referer') || undefined,
+        clientIp: ip || undefined,
+        visitorHeaders: pickVisitorHeaders((n) => request.headers.get(n) || undefined),
         timestamp: new Date().toISOString(),
       };
 

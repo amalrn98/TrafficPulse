@@ -58,44 +58,10 @@ function loadVerifiedNetworks(): Record<string, ProviderRangeInfo> {
     }
   }
 
-  // Fallback defaults to guarantee stability
-  return {
-    OpenAI: {
-      actorFamily: 'OpenAI',
-      organization: 'OpenAI, LLC',
-      cidrs: ['20.15.240.0/20', '20.171.206.0/23', '40.83.2.0/24', '52.230.152.0/24', '13.107.246.0/24', '2603:1030:206::/48'],
-      source: 'https://openai.com/gptbot.json',
-      lastUpdated: '2026-03-01',
-    },
-    Anthropic: {
-      actorFamily: 'Anthropic',
-      organization: 'Anthropic PBC',
-      cidrs: ['160.79.104.0/23', '2607:6bc0::/32'],
-      source: 'https://www.anthropic.com/claudebot.json',
-      lastUpdated: '2026-03-01',
-    },
-    Google: {
-      actorFamily: 'Google',
-      organization: 'Google LLC',
-      cidrs: ['66.249.64.0/19', '64.233.160.0/19', '72.14.192.0/18', '209.85.128.0/17', '2001:4860:4801::/48'],
-      source: 'https://developers.google.com/search/apis/ipranges/googlebot.json',
-      lastUpdated: '2026-03-01',
-    },
-    Microsoft: {
-      actorFamily: 'Microsoft',
-      organization: 'Microsoft Corporation',
-      cidrs: ['40.77.167.0/24', '157.55.39.0/24', '207.46.13.0/24', '13.66.139.0/24', '2a01:111:2006::/48'],
-      source: 'https://www.bing.com/toolbox/bingbot.json',
-      lastUpdated: '2026-03-01',
-    },
-    Perplexity: {
-      actorFamily: 'Perplexity',
-      organization: 'Perplexity AI, Inc.',
-      cidrs: ['198.181.160.0/20', '108.165.184.0/21'],
-      source: 'https://www.perplexity.ai/perplexitybot.json',
-      lastUpdated: '2026-03-01',
-    },
-  };
+  // Fail safe: with no range data nothing can be "verified". Stale or hand-written
+  // fallback ranges would mark arbitrary traffic as verified, so none are shipped.
+  console.warn('[trafficpulse/classifier] ip-ranges.json not found; IP verification is disabled');
+  return {};
 }
 
 export const VERIFIED_NETWORKS: Record<string, ProviderRangeInfo> = loadVerifiedNetworks();
@@ -220,6 +186,9 @@ export function isIpInCidr(ip: string, cidr: string): boolean {
  * Checks whether an IP address matches any of the given CIDRs.
  */
 export function matchIpToCidrs(ip: string, cidrs: string[]): { matches: boolean; matchedCidr?: string } {
+  // Treat IPv4-mapped IPv6 (::ffff:1.2.3.4) as the IPv4 address it wraps
+  const mapped = ip.trim().match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (mapped) ip = mapped[1];
   for (const cidr of cidrs) {
     if (isIpInCidr(ip, cidr)) {
       return { matches: true, matchedCidr: cidr };
