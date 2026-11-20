@@ -19,6 +19,10 @@ paths:
       summary: Ingest Telemetry Event
       description: Ingests an HTTP request event or client-side telemetry payload for authoritative server-side classification and persistent storage.
       operationId: ingestEvent
+      security:
+        - {}
+        - BearerAuth: []
+        - ApiKeyAuth: []
       parameters:
         - name: X-Idempotency-Key
           in: header
@@ -31,7 +35,8 @@ paths:
           required: false
           schema:
             type: string
-          description: Client-supplied tracing request ID.
+            pattern: '^[A-Za-z0-9._-]{1,64}$'
+          description: Client-supplied tracing request ID. Values that do not match the pattern are replaced with a generated ID.
       requestBody:
         required: true
         content:
@@ -62,7 +67,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Site not found or invalid API key.
+          description: >-
+            Unauthorized. Codes: `INVALID_API_KEY` (key invalid or revoked; there is no fallback to a site lookup),
+            `API_KEY_REQUIRED` (no key and no `Origin`, or `REQUIRE_API_KEY=true`), `SITE_NOT_FOUND` (keyless request for an unknown site).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: >-
+            Forbidden. Codes: `SITE_MISMATCH` (payload `siteId` does not match the API key's site),
+            `ORIGIN_MISMATCH` (keyless request whose `Origin` does not match the registered domain).
           content:
             application/json:
               schema:
@@ -85,6 +100,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      summary: CORS preflight for browser beacons
+      description: >-
+        Answers the preflight for the JavaScript tracker. Pass `siteId` so the server can allow the site's registered
+        domain; without it no `Access-Control-Allow-Origin` header is returned.
+      operationId: ingestEventPreflight
+      parameters:
+        - name: siteId
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9_.-]{1,64}$'
+      responses:
+        '204':
+          description: Preflight response. `Access-Control-Allow-Origin` is present only for an allowed origin.
 
   /api/metrics:
     get:
@@ -127,6 +159,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: Token
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Api-Key
 
   schemas:
     IngestEventPayload:
@@ -145,6 +181,7 @@ components:
           example: mw_1712903829000_abc123
         path:
           type: string
+          description: Request path. Query strings and fragments are removed before storage.
           example: /blog/agentic-web
         method:
           type: string
@@ -166,6 +203,15 @@ components:
           type: string
           format: date-time
           example: 2026-10-13T20:00:00.000Z
+        clientIp:
+          type: string
+          description: Visitor IP reported by a server-side integration. Used only when a valid API key is presented; ignored otherwise.
+          example: 203.0.113.9
+        visitorHeaders:
+          type: object
+          description: Visitor request headers (`accept`, `accept-language`, `sec-ch-ua`) forwarded by a server-side integration. Used only with a valid API key.
+          additionalProperties:
+            type: string
         clientSignals:
           type: object
           properties:
