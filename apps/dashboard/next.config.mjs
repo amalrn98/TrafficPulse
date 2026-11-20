@@ -3,6 +3,9 @@ const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@trafficpulse/classifier'],
   output: 'standalone',
+  // next/image is not used; disabling removes the /_next/image attack surface
+  images: { unoptimized: true },
+  poweredByHeader: false,
   async headers() {
     return [
       {
@@ -25,16 +28,13 @@ const nextConfig = {
             value: 'DENY',
           },
           {
-            key: 'X-XSS-Protection',
-            value: '1; mode=block',
-          },
-          {
             key: 'Referrer-Policy',
             value: 'strict-origin-when-cross-origin',
           },
           {
             key: 'Content-Security-Policy',
-            value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self' https:; frame-ancestors 'none';",
+            // 'unsafe-eval' is only needed by the dev server (React refresh)
+            value: `default-src 'self'; script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === 'production' ? '' : " 'unsafe-eval'"}; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`,
           },
         ],
       },

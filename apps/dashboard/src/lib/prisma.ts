@@ -2,7 +2,11 @@ import path from 'path';
 import { PrismaClient } from '@prisma/client';
 
 if (!process.env.DATABASE_URL) {
-  // Default to relative SQLite database path if not explicitly provided
+  if (process.env.NODE_ENV === 'production') {
+    // Silently falling back to an ephemeral SQLite file in production loses data.
+    throw new Error('DATABASE_URL must be set in production');
+  }
+  // Local development convenience only
   process.env.DATABASE_URL = 'file:./dev.db';
 }
 

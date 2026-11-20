@@ -203,7 +203,7 @@ npm run db:seed --workspace=@trafficpulse/dashboard
 
 ### Running Tests
 ```bash
-# Run all test suites across all workspaces (45 tests total)
+# Run all test suites across all workspaces
 npm test
 
 # Run classifier unit & evaluation tests
@@ -234,7 +234,7 @@ npm run build
 - **[Performance & Benchmarks](docs/PERFORMANCE.md)**: Latency budgets, fail-open mechanisms, and load testing.
 - **[Threat Model](docs/THREAT_MODEL.md)**: STRIDE analysis, trust boundaries, and mitigation controls.
 - **[Evaluation Methodology](docs/EVALUATION.md)**: Regression suite fixture provenance and heuristic confidence limits.
-- **[Project Roadmap](docs/ROADMAP.md)**: Production readiness phases and feature timeline.
+- **[Project Roadmap](ROADMAP.md)**: Production readiness phases and feature timeline.
 - **[Integration Examples](examples/)**: Runnable samples for Next.js, Express.js, and Cloudflare Workers.
 
 ---

@@ -25,9 +25,11 @@ function createHistogram(): LatencyHistogram {
 function observeHistogram(histogram: LatencyHistogram, durationSec: number) {
   histogram.count += 1;
   histogram.sum += durationSec;
+  // Store the count in the first bucket that fits; render accumulates once.
   for (let i = 0; i < histogram.buckets.length; i++) {
     if (durationSec <= histogram.buckets[i]) {
       histogram.bucketCounts[i] += 1;
+      break;
     }
   }
 }

@@ -51,6 +51,7 @@ export class TrafficPulseTracker {
   private hasDispatched: boolean = false;
   private currentIdempotencyKey: string = '';
   private isDestroyed: boolean = false;
+  private origPushState?: typeof history.pushState;
   private listeners: Array<{ target: EventTarget; type: string; handler: EventListenerOrEventListenerObject }> = [];
 
   constructor(customConfig?: Partial<TrackerConfig>) {
@@ -219,6 +220,7 @@ export class TrafficPulseTracker {
     // Single-Page-App (SPA) navigation listeners
     const origPushState = typeof history !== 'undefined' ? history.pushState : undefined;
     if (origPushState && typeof history !== 'undefined') {
+      this.origPushState = origPushState;
       history.pushState = (...args: Parameters<typeof history.pushState>) => {
         origPushState.apply(history, args);
         this.handleSpaNavigation();
@@ -338,7 +340,11 @@ export class TrafficPulseTracker {
     this.hasDispatched = true;
 
     const payload = this.collectSignals();
-    const endpoint = (this.config.apiHost || '').replace(/\/$/, '') + '/api/v1/events';
+    // siteId in the query lets the server answer the CORS preflight for the right domain
+    const endpoint =
+      (this.config.apiHost || '').replace(/\/$/, '') +
+      '/api/v1/events?siteId=' +
+      encodeURIComponent(this.config.siteId);
     const jsonStr = JSON.stringify(payload);
 
     let beaconSent = false;
@@ -369,6 +375,10 @@ export class TrafficPulseTracker {
    */
   public teardown(): void {
     this.isDestroyed = true;
+    if (this.origPushState && typeof history !== 'undefined') {
+      history.pushState = this.origPushState;
+      this.origPushState = undefined;
+    }
     for (const { target, type, handler } of this.listeners) {
       target.removeEventListener(type, handler);
     }

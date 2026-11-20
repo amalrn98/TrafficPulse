@@ -24,7 +24,7 @@ const EVALUATION_DATASET: EvaluationSample[] = [
     provenance: 'OpenAI official published CIDR documentation',
     metadata: {
       userAgent: 'Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)',
-      ip: '20.15.240.15',
+      ip: '74.7.227.15',
     },
     expectedActorType: 'ai_crawler',
     expectedVerification: 'verified',
@@ -35,7 +35,7 @@ const EVALUATION_DATASET: EvaluationSample[] = [
     provenance: 'Anthropic published IP range documentation',
     metadata: {
       userAgent: 'Mozilla/5.0 (compatible; ClaudeBot/1.0; +claudebot@anthropic.com)',
-      ip: '160.79.104.22',
+      ip: '216.73.216.22',
     },
     expectedActorType: 'ai_crawler',
     expectedVerification: 'verified',

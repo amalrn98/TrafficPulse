@@ -1,11 +1,17 @@
 import { TrafficClassifier, ClassificationResult } from '@trafficpulse/classifier';
-import { dispatchEventWithRetry } from './dispatch';
+import { dispatchEventWithRetry, pickVisitorHeaders } from './dispatch';
 
 export interface ExpressMiddlewareOptions {
   siteId: string;
   apiKey?: string;
   apiHost?: string;
   ignoredPaths?: string[];
+  /**
+   * Trust X-Forwarded-For for the visitor IP. Only enable when the app sits behind a proxy
+   * that overwrites or appends the header. Default false: the socket address is used, because
+   * a client-supplied X-Forwarded-For would otherwise let anyone claim a crawler's IP.
+   */
+  trustForwardedFor?: boolean;
   timeoutMs?: number;
   maxRetries?: number;
   onClassified?: (req: any, res: any, classification: ClassificationResult) => boolean | void;
@@ -20,16 +26,16 @@ export function createTrafficPulseMiddleware(options: ExpressMiddlewareOptions) 
 
   return function trafficPulseMiddleware(req: any, res: any, next: () => void) {
     try {
-      const path = req.path || req.url || '/';
-      if (ignored.some((prefix) => path.startsWith(prefix))) {
+      const path = String(req.path || req.url || '/').split(/[?#]/)[0];
+      if (ignored.some((prefix) => path === prefix || path.startsWith(prefix.endsWith('/') ? prefix : prefix + '/'))) {
         return next();
       }
 
       const ua = (req.headers && req.headers['user-agent']) || '';
-      const ip =
-        (req.headers && req.headers['x-forwarded-for'])?.split(',')[0].trim() ||
-        req.socket?.remoteAddress ||
-        '';
+      const xff = options.trustForwardedFor ? (req.headers && req.headers['x-forwarded-for']) : undefined;
+      // Rightmost entry is the one appended by our own proxy; leftmost is client-controlled.
+      const xffParts = typeof xff === 'string' ? xff.split(',').map((p: string) => p.trim()).filter(Boolean) : [];
+      const ip = (xffParts.length ? xffParts[xffParts.length - 1] : '') || req.socket?.remoteAddress || '';
 
       let classification: ClassificationResult;
       try {
@@ -92,6 +98,8 @@ export function createTrafficPulseMiddleware(options: ExpressMiddlewareOptions) 
           method: req.method,
           userAgent: ua,
           referer: req.headers ? req.headers['referer'] : undefined,
+          clientIp: ip || undefined,
+          visitorHeaders: pickVisitorHeaders((n) => (req.headers ? (req.headers[n] as string | undefined) : undefined)),
           timestamp: new Date().toISOString(),
         };
 

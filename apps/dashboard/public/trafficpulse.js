@@ -128,7 +128,7 @@
     hasDispatched = true;
 
     var payload = JSON.stringify(collect());
-    var url = (apiHost ? apiHost.replace(/\/$/, '') : '') + '/api/v1/events';
+    var url = (apiHost ? apiHost.replace(/\/$/, '') : '') + '/api/v1/events?siteId=' + encodeURIComponent(siteId);
 
     var beaconSent = false;
     if (navigator.sendBeacon) {

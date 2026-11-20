@@ -12,6 +12,10 @@ export interface ValidatedIngestEvent {
   durationMs?: number;
   userAgent: string;
   referer?: string;
+  /** Visitor IP reported by a server-side integration. Only honored when a valid API key is presented. */
+  clientIp?: string;
+  /** Visitor request headers forwarded by a server-side integration. Only honored with a valid API key. */
+  visitorHeaders?: Record<string, string>;
   clientSignals?: {
     webdriver?: boolean;
     hasChromeObject?: boolean;
@@ -80,7 +84,9 @@ export function validateIngestPayload(
     if (p.length > 2048) {
       return { error: { field: 'path', message: 'path cannot exceed 2048 characters' } };
     }
-    cleanPath = p.startsWith('/') ? p : `/${p}`;
+    // Privacy: never store query strings or fragments (may carry tokens or PII)
+    const noQuery = p.split(/[?#]/)[0];
+    cleanPath = noQuery.startsWith('/') ? noQuery : `/${noQuery}`;
   }
 
   // 4. Method
@@ -134,7 +140,21 @@ export function validateIngestPayload(
   let cleanReferer: string | undefined;
   const candidateReferer = b.referer || b.requestHeaders?.referer || rawRefererHeader;
   if (typeof candidateReferer === 'string') {
-    cleanReferer = candidateReferer.trim().slice(0, 2048);
+    cleanReferer = candidateReferer.trim().split(/[?#]/)[0].slice(0, 2048);
+  }
+
+  // 7b. Server-side integration context (ignored by the route unless the API key is valid)
+  let cleanClientIp: string | undefined;
+  if (typeof b.clientIp === 'string' && b.clientIp.length <= 64) {
+    cleanClientIp = b.clientIp.trim() || undefined;
+  }
+  let cleanVisitorHeaders: Record<string, string> | undefined;
+  if (b.visitorHeaders && typeof b.visitorHeaders === 'object' && !Array.isArray(b.visitorHeaders)) {
+    cleanVisitorHeaders = {};
+    for (const name of ['accept', 'accept-language', 'sec-ch-ua']) {
+      const v = (b.visitorHeaders as Record<string, unknown>)[name];
+      if (typeof v === 'string') cleanVisitorHeaders[name] = v.slice(0, 512);
+    }
   }
 
   // 8. Status Code
@@ -202,6 +222,8 @@ export function validateIngestPayload(
       durationMs: cleanDurationMs,
       userAgent: cleanUa,
       referer: cleanReferer,
+      clientIp: cleanClientIp,
+      visitorHeaders: cleanVisitorHeaders,
       clientSignals: cleanSignals,
     },
   };

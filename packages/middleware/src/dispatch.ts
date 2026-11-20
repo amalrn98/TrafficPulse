@@ -1,3 +1,13 @@
+/** Visitor headers worth forwarding for server-side header heuristics. */
+export function pickVisitorHeaders(get: (name: string) => string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of ['accept', 'accept-language', 'sec-ch-ua']) {
+    const v = get(name);
+    if (v) out[name] = v.slice(0, 512);
+  }
+  return out;
+}
+
 export interface DispatchOptions {
   apiHost: string;
   siteId: string;
