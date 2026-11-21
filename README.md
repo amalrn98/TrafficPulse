@@ -203,9 +203,15 @@ npm install
 npm run db:generate --workspace=@trafficpulse/dashboard
 npm run db:push --workspace=@trafficpulse/dashboard
 
+# 2b. Or, for PostgreSQL, use the Postgres variants of the same scripts
+npm run db:generate:postgres --workspace=@trafficpulse/dashboard
+npm run db:push:postgres --workspace=@trafficpulse/dashboard
+
 # 3. (Optional) Seed isolated demo sandbox dataset
 npm run db:seed --workspace=@trafficpulse/dashboard
 ```
+
+To run with containers instead, see `docker-compose.yml` (production) and `docker-compose.dev.yml` (development), and the [Self-Hosting Guide](docs/SELF_HOSTING.md).
 
 ### Running Tests
 ```bash
@@ -236,11 +242,16 @@ npm run build
 ## 📚 Documentation & Architecture
 
 - **[System Architecture](docs/ARCHITECTURE.md)**: Monorepo layout, request flow, and state boundaries.
+- **[Self-Hosting Guide](docs/SELF_HOSTING.md)**: Running your own TrafficPulse instance.
+- **[Configuration Reference](docs/CONFIGURATION.md)**: Configuration options.
+- **[API Specification](docs/openapi.yaml)**: OpenAPI definition of the ingestion API.
 - **[Privacy Documentation](docs/PRIVACY.md)**: Data inventory, IP masking, retention policies, and opt-out controls.
 - **[Performance & Benchmarks](docs/PERFORMANCE.md)**: Latency budgets, fail-open mechanisms, and load testing.
 - **[Threat Model](docs/THREAT_MODEL.md)**: STRIDE analysis, trust boundaries, and mitigation controls.
 - **[Evaluation Methodology](docs/EVALUATION.md)**: Regression suite fixture provenance and heuristic confidence limits.
 - **[Project Roadmap](ROADMAP.md)**: Production readiness phases and feature timeline.
+- **[Changelog](CHANGELOG.md)**: Release history.
+- **[Contributing](CONTRIBUTING.md)** and **[Security Policy](SECURITY.md)**: How to contribute and report vulnerabilities.
 - **[Integration Examples](examples/)**: Runnable samples for Next.js, Express.js, and Cloudflare Workers.
 
 ---
