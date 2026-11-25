@@ -30,3 +30,8 @@ dev.db
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Editors & coverage
+.idea/
+.vscode/
+coverage/
