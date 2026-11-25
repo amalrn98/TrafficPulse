@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dbStore } from '@/lib/db';
 import { verifyAdminAuth } from '@/lib/auth';
 
+/** Never return key material (even hashes) to the browser. */
+function publicSite<T extends { keyHash?: string; apiKey?: string }>(site: T | null): Omit<T, 'keyHash'> | null {
+  if (!site) return null;
+  const { keyHash: _k, ...rest } = site;
+  return rest;
+}
+
+const DOMAIN_RE = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$|^localhost$/;
+
 export async function GET(req: NextRequest) {
   const auth = verifyAdminAuth(req);
   if (!auth.authorized) {
@@ -65,8 +74,8 @@ export async function GET(req: NextRequest) {
     ]);
 
     return NextResponse.json({
-      sites,
-      selectedSite: targetSite,
+      sites: sites.map((x) => publicSite(x)),
+      selectedSite: publicSite(targetSite),
       isDemo,
       overview,
       timeseries,
@@ -101,10 +110,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const isDemo = body.isDemo === true;
-    const site = await dbStore.getOrCreateSite(body.domain, body.name, isDemo);
+    const domain = typeof body.domain === 'string' ? body.domain.trim().toLowerCase() : '';
+    if (!DOMAIN_RE.test(domain)) {
+      return NextResponse.json({ error: 'Invalid domain (use a bare hostname such as example.com)' }, { status: 400 });
+    }
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 120) : undefined;
 
-    return NextResponse.json({ success: true, site }, { status: 201 });
+    const isDemo = body.isDemo === true;
+    const site = await dbStore.getOrCreateSite(domain, name, isDemo);
+
+    // apiKey is present only on first creation (shown once); keyHash is never returned.
+    return NextResponse.json({ success: true, site: publicSite(site) }, { status: 201 });
   } catch (err: unknown) {
     console.error('Site creation error:', err instanceof Error ? err.message : String(err));
     return NextResponse.json(

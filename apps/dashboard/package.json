@@ -12,7 +12,7 @@
     "db:push:postgres": "prisma db push --schema=prisma/schema.postgres.prisma",
     "db:generate:postgres": "prisma generate --schema=prisma/schema.postgres.prisma",
     "db:seed": "node scripts/seed-demo.mjs",
-    "test": "node --test tests/validation.test.mjs tests/rate-limit.test.mjs tests/db.test.mjs tests/observability.test.mjs"
+    "test": "node --test tests/validation.test.mjs tests/rate-limit.test.mjs tests/db.test.mjs tests/observability.test.mjs tests/hardening.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -22,16 +22,16 @@
     "next": "^15.5.29",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.5.4"
+    "tailwind-merge": "^2.6.2"
   },
   "devDependencies": {
     "@types/node": "^20.18.0",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
-    "autoprefixer": "^10.4.20",
+    "autoprefixer": "^10.7.0",
     "eslint": "^8.57.0",
     "eslint-config-next": "^15.5.29",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.33",
     "prisma": "^5.21.1",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.4.5"

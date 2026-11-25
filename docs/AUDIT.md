@@ -82,3 +82,23 @@ The following items are outside automated code scope and require human maintaine
 1. **Legal Review of Privacy**: Counsel should review `docs/PRIVACY.md` to confirm legitimate interest bases for IP masking under specific European DPA guidelines.
 2. **Upstream Ownership Confirmation**: Verify whether `amalrn98/TrafficPulse` or another organization is the definitive production deployment target.
 3. **Perplexity CIDR Endpoint Verification**: Perplexity AI has not yet published an official automated JSON endpoint; CIDR ranges are sourced from observed ASN records and require periodic manual confirmation (see `docs/DECISIONS.md` DEC-007).
+
+
+## Errata and follow-up audit (2026-11-20)
+
+A follow-up review re-tested several items above and found they were not fully resolved at the time of the first audit.
+They are addressed on the `fix/audit-hardening` branch.
+
+| ID | What the first audit said | What the follow-up found | Follow-up status |
+|---|---|---|---|
+| SEC-01 | Admin auth added | The `tp_admin_key` cookie path was never used by the UI and a malformed cookie crashed auth | Cookie path removed, regression test added |
+| SEC-02 | Keys hashed with scrypt | `scryptSync` ran on the event loop for every attacker-supplied key (about 40 ms each) | Async scrypt, key-format pre-check, SHA-256 cache keys |
+| SEC-03 | Proxy trust requires `TRUST_PROXY=true` | The leftmost `X-Forwarded-For` entry (client controlled) was used; Express/Next adapters trusted it unconditionally | Rightmost trusted hop; adapters default to the socket address |
+| SEC-04 | Next.js advisories fixed by `^14.2.25` | `next@14.2.35` still has open advisories; patched versions are 15.5.28+ / 16.4.1+ | Tracked in a separate upgrade PR |
+| SEC-05 | CORS fixed | Any non-empty `X-Api-Key` skipped the origin check and invalid keys fell back to a `siteId` lookup; disallowed origins received `Access-Control-Allow-Origin: null` | Keys are validated strictly; header omitted when not allowed |
+| (new) | IP verification | CIDR data contained non-vendor ranges and the Anthropic source URL returned 404 | Data replaced from the vendors' published lists; refresh script fails loudly |
+| (new) | Quickstart | `docker compose up` created no tables | `db-init` job added |
+
+Known limitations that remain by design: client-reported behavioral signals can be forged (they raise confidence but
+are not proof of a human), and keyless browser beacons identify a site by its public `siteId`. Use `REQUIRE_API_KEY=true`
+with the server-side middleware if you need authenticated-only ingestion.

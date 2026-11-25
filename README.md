@@ -131,8 +131,12 @@ app.use(createTrafficPulseMiddleware({
   siteId: process.env.TRAFFICPULSE_SITE_ID,
   apiKey: process.env.TRAFFICPULSE_API_KEY,
   apiHost: 'http://localhost:3000',
+  // Only if your app sits behind a proxy that sets X-Forwarded-For. Default: socket address.
+  // trustForwardedFor: true,
 }));
 ```
+
+> **Behind a proxy?** The Express adapter ignores `X-Forwarded-For` unless you set `trustForwardedFor: true`, because a client-supplied header would otherwise let anyone claim a crawler's IP. See [Configuration](docs/CONFIGURATION.md).
 
 ### Option 4: Cloudflare Workers
 ```typescript
@@ -156,7 +160,9 @@ export default {
 - **Database-Level Tenant Isolation**: Events and aggregations are scoped by `siteId`. Cross-site leaks are blocked by indexed database queries.
 - **Strict Payload Validation**: Payloads exceeding 64KB receive `413 Payload Too Large`. Timestamps outside `[-7 days, +24 hours]` and malformed structures receive `400 Bad Request`.
 - **Idempotent Ingestion**: Duplicate event submissions carrying the same `idempotencyKey` return `200 OK` (`isDuplicate: true`) without inflating totals.
-- **Rate Limiting**: Sliding token-bucket rate limiter per site and client IP (120 token burst, 30 req/sec refill). Exceeded clients receive `429 Too Many Requests` with `Retry-After`.
+- **Rate Limiting**: Token-bucket limits per client IP (120 burst, 30 req/sec; requires `TRUST_PROXY=true` behind your proxy) plus a per-site ceiling (1200 burst, 300 req/sec, configurable). Exceeded clients receive `429 Too Many Requests` with `Retry-After`.
+- **Ingestion Authentication**: Requests with an API key must present a valid one for the matching site (`401`/`403` otherwise). Keyless browser beacons identify a site only by its public `siteId`, must carry a matching `Origin`, and can be disabled with `REQUIRE_API_KEY=true`.
+- **Verified Bots**: "verified" means the client IP is inside the vendor's published range. Ranges come from `packages/classifier/data/ip-ranges.json` and are refreshed monthly. Client-reported behavior signals (mouse, scroll) can be forged, so they raise confidence but are not proof of a human.
 - **Sanitized Error Responses**: Internal exception details, stack traces, and database connection strings are never leaked in API error responses.
 - **Privacy IP Masking**: Stored IPs have their host identifiers masked (e.g., `192.168.1.0` or `2001:db8:1:2::`) prior to persistence.
 - **Health & Probes**: Readiness probe at `GET /api/health` validates database connectivity. DB-independent liveness probe at `GET /api/health/liveness` enables zero-downtime Kubernetes and container orchestrator restarts.
@@ -203,7 +209,7 @@ npm run db:seed --workspace=@trafficpulse/dashboard
 
 ### Running Tests
 ```bash
-# Run all test suites across all workspaces (45 tests total)
+# Run all test suites across all workspaces
 npm test
 
 # Run classifier unit & evaluation tests
@@ -234,7 +240,7 @@ npm run build
 - **[Performance & Benchmarks](docs/PERFORMANCE.md)**: Latency budgets, fail-open mechanisms, and load testing.
 - **[Threat Model](docs/THREAT_MODEL.md)**: STRIDE analysis, trust boundaries, and mitigation controls.
 - **[Evaluation Methodology](docs/EVALUATION.md)**: Regression suite fixture provenance and heuristic confidence limits.
-- **[Project Roadmap](docs/ROADMAP.md)**: Production readiness phases and feature timeline.
+- **[Project Roadmap](ROADMAP.md)**: Production readiness phases and feature timeline.
 - **[Integration Examples](examples/)**: Runnable samples for Next.js, Express.js, and Cloudflare Workers.
 
 ---

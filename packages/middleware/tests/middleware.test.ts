@@ -60,6 +60,7 @@ test('Express Middleware - Attaches classification to request and sets response 
   const mw = createTrafficPulseMiddleware({
     siteId: 'site_exp_01',
     apiKey: 'tp_live_expkey',
+    trustForwardedFor: true,
   });
 
   const req: any = {
@@ -67,7 +68,7 @@ test('Express Middleware - Attaches classification to request and sets response 
     url: '/blog/agentic-web',
     headers: {
       'user-agent': 'Mozilla/5.0 AppleWebKit/537.36 (compatible; GPTBot/1.2; +https://openai.com/gptbot)',
-      'x-forwarded-for': '20.15.240.10',
+      'x-forwarded-for': '74.7.227.10', // inside OpenAI's published GPTBot ranges
     },
   };
 
@@ -91,6 +92,22 @@ test('Express Middleware - Attaches classification to request and sets response 
   assert.strictEqual(headersSet['X-TrafficPulse-ActorType'], 'ai_crawler');
   assert.strictEqual(headersSet['X-TrafficPulse-Verification'], 'verified');
   assert.strictEqual(headersSet['X-TrafficPulse-Bot'], 'GPTBot');
+});
+
+test('Express Middleware - Ignores spoofed X-Forwarded-For by default', () => {
+  const mw = createTrafficPulseMiddleware({ siteId: 'site_exp_02' });
+  const req: any = {
+    method: 'GET',
+    url: '/',
+    socket: { remoteAddress: '198.51.100.7' },
+    headers: {
+      'user-agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+      'x-forwarded-for': '66.249.66.1',
+    },
+  };
+  const headersSet: Record<string, string> = {};
+  mw(req, { setHeader: (n: string, v: string) => (headersSet[n] = v) }, () => {});
+  assert.notStrictEqual(headersSet['X-TrafficPulse-Verification'], 'verified');
 });
 
 test('Cloudflare Worker Wrapper - Executes fetch handler with headers and classification', async () => {

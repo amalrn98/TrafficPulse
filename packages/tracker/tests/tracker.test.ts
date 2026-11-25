@@ -110,3 +110,33 @@ test('Tracker - Honors Global Privacy Control (GPC) opt-out', () => {
   }
 });
 
+
+test('Tracker teardown does not clobber another tracker\'s pushState wrapper', () => {
+  const original = () => {};
+  (globalThis as any).history = { pushState: original };
+  const mk = () => {
+    const t: any = Object.create((TrafficPulseTracker as any).prototype);
+    t.isDestroyed = false;
+    t.listeners = [];
+    t.handleSpaNavigation = () => {};
+    return t;
+  };
+  const a = mk();
+  const b = mk();
+  // Simulate a.init then b.init wrapping on top of a
+  for (const t of [a, b]) {
+    const orig = (globalThis as any).history.pushState;
+    t.origPushState = orig;
+    const w = (...args: any[]) => orig.apply((globalThis as any).history, args);
+    t.wrappedPushState = w;
+    (globalThis as any).history.pushState = w;
+  }
+  const bWrapper = (globalThis as any).history.pushState;
+  // Tearing down A (not the outermost wrapper) must leave B's wrapper in place
+  (TrafficPulseTracker as any).prototype.teardown.call(a);
+  assert.strictEqual((globalThis as any).history.pushState, bWrapper);
+  // Tearing down B (outermost) restores A's wrapper, not a stale reference to the original
+  (TrafficPulseTracker as any).prototype.teardown.call(b);
+  assert.notStrictEqual((globalThis as any).history.pushState, bWrapper);
+  delete (globalThis as any).history;
+});

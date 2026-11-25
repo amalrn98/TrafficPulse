@@ -58,6 +58,7 @@ model Event {
   @@unique([siteId, idempotencyKey])
   @@index([siteId, isDemo, timestamp])
   @@index([siteId, timestamp])
+  @@index([timestamp]) // retention pruning scans by timestamp across all sites
   @@index([siteId, actorType])
   @@index([trafficCategory])
   @@index([actorType])

@@ -41,6 +41,6 @@ jobs:
           title: 'chore: refresh vendor IP/CIDR ranges'
           body: |
             Automated monthly CIDR refresh.
+            Note: PRs opened with GITHUB_TOKEN do not trigger CI. Run the CI workflow manually (or use a PAT/GitHub App token) before merging.
             Review changes in `packages/classifier/data/ip-ranges.json` before merging.
           branch: 'chore/refresh-ip-ranges'
-          labels: 'data-update'

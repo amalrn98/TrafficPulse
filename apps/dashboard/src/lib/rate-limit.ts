@@ -89,6 +89,7 @@ export class MemoryRateLimiter implements RateLimiterStore {
   private maxTokens: number;
   private refillRatePerSec: number;
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private static readonly MAX_BUCKETS = 100_000;
 
   constructor(config: RateLimitConfig = { maxTokens: 120, refillRatePerSec: 20 }) {
     this.maxTokens = config.maxTokens;
@@ -108,6 +109,9 @@ export class MemoryRateLimiter implements RateLimiterStore {
     let entry = this.buckets.get(key);
 
     if (!entry) {
+      if (this.buckets.size >= MemoryRateLimiter.MAX_BUCKETS) {
+        this.evictOldest();
+      }
       entry = { tokens: this.maxTokens, lastRefill: now };
       this.buckets.set(key, entry);
     } else {
@@ -135,13 +139,24 @@ export class MemoryRateLimiter implements RateLimiterStore {
     };
   }
 
+  /** Removes buckets that would be fully refilled by now (equivalent to a fresh bucket). */
   private cleanup(): void {
     const now = Date.now();
-    const staleDurationMs = 10 * 60 * 1000;
     for (const [key, entry] of this.buckets.entries()) {
-      if (now - entry.lastRefill > staleDurationMs && entry.tokens >= this.maxTokens) {
+      const refilled = entry.tokens + ((now - entry.lastRefill) / 1000) * this.refillRatePerSec;
+      if (refilled >= this.maxTokens) {
         this.buckets.delete(key);
       }
+    }
+  }
+
+  /** Bounds memory under key-flooding by dropping the oldest 10% of buckets (Map keeps insertion order). */
+  private evictOldest(): void {
+    const drop = Math.ceil(MemoryRateLimiter.MAX_BUCKETS * 0.1);
+    let i = 0;
+    for (const key of this.buckets.keys()) {
+      this.buckets.delete(key);
+      if (++i >= drop) break;
     }
   }
 }
@@ -259,7 +274,7 @@ export class RedisRateLimiter implements RateLimiterStore {
         const parsedReply = parseRespIntegerArray(buffer);
         if (parsedReply) {
           finish(parsedReply, socket);
-        } else if (buffer.includes('-ERR') || buffer.includes('-NOAUTH') || buffer.includes('-WRONGPASS')) {
+        } else if (/(^|\r\n)-(ERR|NOAUTH|WRONGPASS)/.test(buffer)) {
           finish(null, socket);
         }
       });
@@ -283,4 +298,10 @@ export function createRateLimiter(config: RateLimitConfig = { maxTokens: 120, re
 export const ingestionRateLimiter = createRateLimiter({
   maxTokens: 120, // 120 requests burst
   refillRatePerSec: 30, // 30 req/sec sustained
+});
+
+// Per-site ceiling, applied after the site is resolved so unknown siteIds never allocate buckets.
+export const siteRateLimiter = createRateLimiter({
+  maxTokens: parseInt(process.env.INGEST_SITE_BURST || '1200', 10) || 1200,
+  refillRatePerSec: parseInt(process.env.INGEST_SITE_RPS || '300', 10) || 300,
 });

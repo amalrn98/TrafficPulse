@@ -51,6 +51,8 @@ export class TrafficPulseTracker {
   private hasDispatched: boolean = false;
   private currentIdempotencyKey: string = '';
   private isDestroyed: boolean = false;
+  private origPushState?: typeof history.pushState;
+  private wrappedPushState?: typeof history.pushState;
   private listeners: Array<{ target: EventTarget; type: string; handler: EventListenerOrEventListenerObject }> = [];
 
   constructor(customConfig?: Partial<TrackerConfig>) {
@@ -219,10 +221,13 @@ export class TrafficPulseTracker {
     // Single-Page-App (SPA) navigation listeners
     const origPushState = typeof history !== 'undefined' ? history.pushState : undefined;
     if (origPushState && typeof history !== 'undefined') {
-      history.pushState = (...args: Parameters<typeof history.pushState>) => {
+      this.origPushState = origPushState;
+      const wrapper = (...args: Parameters<typeof history.pushState>) => {
         origPushState.apply(history, args);
         this.handleSpaNavigation();
       };
+      this.wrappedPushState = wrapper;
+      history.pushState = wrapper;
     }
 
     const popstateHandler = () => {
@@ -338,7 +343,11 @@ export class TrafficPulseTracker {
     this.hasDispatched = true;
 
     const payload = this.collectSignals();
-    const endpoint = (this.config.apiHost || '').replace(/\/$/, '') + '/api/v1/events';
+    // siteId in the query lets the server answer the CORS preflight for the right domain
+    const endpoint =
+      (this.config.apiHost || '').replace(/\/$/, '') +
+      '/api/v1/events?siteId=' +
+      encodeURIComponent(this.config.siteId);
     const jsonStr = JSON.stringify(payload);
 
     let beaconSent = false;
@@ -369,6 +378,15 @@ export class TrafficPulseTracker {
    */
   public teardown(): void {
     this.isDestroyed = true;
+    if (this.origPushState && typeof history !== 'undefined') {
+      // Only restore if our wrapper is still the active one. If another tracker (or library)
+      // wrapped on top of it, leave the chain alone: our wrapper becomes a no-op once destroyed.
+      if (history.pushState === this.wrappedPushState) {
+        history.pushState = this.origPushState;
+      }
+      this.origPushState = undefined;
+      this.wrappedPushState = undefined;
+    }
     for (const { target, type, handler } of this.listeners) {
       target.removeEventListener(type, handler);
     }

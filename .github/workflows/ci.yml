@@ -6,13 +6,20 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Build & Test (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        node-version: [22]
 
     services:
       postgres:
@@ -72,3 +79,4 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config -q
+          docker compose build

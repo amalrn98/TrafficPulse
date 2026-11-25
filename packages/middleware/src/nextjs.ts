@@ -1,11 +1,17 @@
 import { TrafficClassifier, ClassificationResult } from '@trafficpulse/classifier';
-import { dispatchEventWithRetry } from './dispatch';
+import { dispatchEventWithRetry, pickVisitorHeaders } from './dispatch';
 
 export interface NextMiddlewareOptions {
   siteId: string;
   apiKey?: string;
   apiHost?: string;
   ignoredPaths?: string[];
+  /**
+   * Trust X-Forwarded-For / X-Real-IP for the visitor IP (default true because Next middleware has no
+   * socket address; platforms such as Vercel overwrite these headers). Set false on self-hosted
+   * deployments where clients can reach the server directly.
+   */
+  trustForwardedFor?: boolean;
   timeoutMs?: number;
   maxRetries?: number;
   onClassified?: (req: Request, classification: ClassificationResult) => void | Response;
@@ -39,10 +45,12 @@ export function withTrafficPulse(options: NextMiddlewareOptions) {
       }
 
       const ua = req.headers.get('user-agent') || '';
-      const ip =
-        req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-        req.headers.get('x-real-ip') ||
-        '';
+      const trustXff = options.trustForwardedFor !== false;
+      const xffParts = trustXff
+        ? (req.headers.get('x-forwarded-for') || '').split(',').map((p) => p.trim()).filter(Boolean)
+        : [];
+      // Rightmost entry is the one appended by the trusted platform proxy
+      const ip = (xffParts.length ? xffParts[xffParts.length - 1] : '') || (trustXff ? req.headers.get('x-real-ip') : '') || '';
 
       const headerRecord: Record<string, string> = {};
       req.headers.forEach((val, key) => {
@@ -99,6 +107,8 @@ export function withTrafficPulse(options: NextMiddlewareOptions) {
           method: req.method,
           userAgent: ua,
           referer: req.headers.get('referer') || undefined,
+          clientIp: ip || undefined,
+          visitorHeaders: pickVisitorHeaders((n) => req.headers.get(n) || undefined),
           timestamp: new Date().toISOString(),
         };
 

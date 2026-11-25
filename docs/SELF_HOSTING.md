@@ -18,14 +18,20 @@ cp .env.example .env
 
 ### 2. Configure Environment Variables
 
-Edit `.env` and configure:
+Edit `.env` and set real values. The app refuses admin and metrics access while the example placeholders are in place.
 ```ini
-ADMIN_API_KEY="your-high-entropy-admin-key"
-DATABASE_URL="postgresql://postgres:postgres@postgres:5432/trafficpulse?schema=public"
-NEXTAUTH_SECRET="random-32-byte-hex-string"
-TRUST_PROXY=true
+POSTGRES_PASSWORD="<openssl rand -hex 24>"
+ADMIN_API_KEY="<openssl rand -hex 32>"
+METRICS_AUTH_TOKEN="<openssl rand -hex 32>"
+API_KEY_SALT="<openssl rand -hex 16>"   # set before creating your first site
 RETENTION_DAYS=90
 ```
+`docker-compose.yml` builds `DATABASE_URL` from `POSTGRES_PASSWORD`, so you do not set it yourself.
+
+**Proxy trust.** Compose binds the app to `127.0.0.1:3000`. Run a TLS reverse proxy in front of it and set
+`TRUST_PROXY=true` only then (and `TRUSTED_PROXY_HOPS` if more than one proxy is in the chain).
+Never set `TRUST_PROXY=true` while port 3000 is reachable directly: clients could then choose their own IP
+and bypass per-IP rate limiting.
 
 ### 3. Launch Services
 
@@ -33,7 +39,7 @@ RETENTION_DAYS=90
 docker compose up -d
 ```
 
-Verify services are healthy:
+The `db-init` job creates the tables (`prisma db push`) before the app starts. Verify:
 ```bash
 docker compose ps
 curl http://localhost:3000/api/health
@@ -53,7 +59,10 @@ For high-throughput deployments (>= 1,000 requests / sec):
 
 ## Kubernetes Deployment
 
-Pre-configured Kubernetes manifests are provided in `deploy/kubernetes/trafficpulse.yaml`:
+Pre-configured Kubernetes manifests are provided in `deploy/kubernetes/trafficpulse.yaml` (it creates the `trafficpulse` namespace).
+Create the `trafficpulse-env` secret first (DATABASE_URL, ADMIN_API_KEY, METRICS_AUTH_TOKEN, API_KEY_SALT, ...), and run
+`prisma db push` once against the database (for example from a CI job using the image's builder stage).
+The metrics endpoint requires `Authorization: Bearer $METRICS_AUTH_TOKEN`, so configure your Prometheus scrape job with it.
 
 ```bash
 kubectl apply -f deploy/kubernetes/trafficpulse.yaml
@@ -69,11 +78,11 @@ The manifest configures:
 
 To back up your PostgreSQL analytics data:
 ```bash
-docker compose exec postgres pg_dump -U postgres trafficpulse > backup_$(date +%Y%m%d).sql
+docker compose exec postgres pg_dump -U trafficpulse trafficpulse > backup_$(date +%Y%m%d).sql
 ```
 
 To restore from a backup:
 ```bash
-cat backup.sql | docker compose exec -T postgres psql -U postgres trafficpulse
+cat backup.sql | docker compose exec -T postgres psql -U trafficpulse trafficpulse
 ```
 

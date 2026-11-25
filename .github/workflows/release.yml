@@ -6,14 +6,28 @@ on:
       - 'v*.*.*'
 
 permissions:
-  contents: write
-  packages: write
-  id-token: write
+  contents: read
 
 jobs:
+  verify:
+    name: Build & Test before release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: npm test --workspace=@trafficpulse/classifier --workspace=@trafficpulse/tracker --workspace=@trafficpulse/middleware
+
   publish-npm:
     name: Publish NPM Packages
+    needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -37,7 +51,12 @@ jobs:
 
   publish-container:
     name: Build & Push Multi-Arch Container Image
+    needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

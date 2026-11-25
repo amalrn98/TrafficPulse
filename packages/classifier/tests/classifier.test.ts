@@ -8,7 +8,7 @@ test('TrafficClassifier - Identifies LLM Training Crawlers with Verification Sta
   // Verified Origin via CIDR match
   const gptBotVerified = TrafficClassifier.classify({
     userAgent: 'Mozilla/5.0 AppleWebKit/537.36 (compatible; GPTBot/1.2; +https://openai.com/gptbot)',
-    ip: '20.15.240.10',
+    ip: '74.7.227.10',
   });
 
   assert.strictEqual(gptBotVerified.category, 'llm_training');
@@ -245,7 +245,7 @@ test('Confidence Caps: evidence tier enforces maximum confidence', () => {
   // CIDR-verified: max 0.95
   const verified = TrafficClassifier.classify({
     userAgent: 'Mozilla/5.0 AppleWebKit/537.36 (compatible; GPTBot/1.2; +https://openai.com/gptbot)',
-    ip: '20.15.240.10',
+    ip: '74.7.227.10',
   });
   assert.ok(verified.confidence <= 0.95, `CIDR-verified confidence ${verified.confidence} exceeds 0.95 cap`);
   assert.ok(verified.confidence > 0.90, 'CIDR-verified confidence should be high (>0.90)');
@@ -265,3 +265,18 @@ test('Confidence Caps: evidence tier enforces maximum confidence', () => {
   assert.strictEqual(conflicting.actorType, 'unknown');
 });
 
+
+test('IP verification: general Google infrastructure is not Googlebot', () => {
+  const r = TrafficClassifier.classify({ userAgent: 'Googlebot/2.1', ip: '209.85.200.1' });
+  assert.notStrictEqual(r.verificationStatus, 'verified');
+});
+
+test('IP verification: addresses in vendors\' published lists verify', () => {
+  assert.strictEqual(TrafficClassifier.classify({ userAgent: 'Googlebot/2.1', ip: '192.178.5.10' }).verificationStatus, 'verified');
+  assert.strictEqual(TrafficClassifier.classify({ userAgent: 'GPTBot/1.1', ip: '74.7.227.10' }).verificationStatus, 'verified');
+  assert.strictEqual(TrafficClassifier.classify({ userAgent: 'ClaudeBot/1.0', ip: '216.73.216.5' }).verificationStatus, 'verified');
+});
+
+test('IP verification: IPv4-mapped IPv6 is matched as IPv4', () => {
+  assert.strictEqual(TrafficClassifier.classify({ userAgent: 'GPTBot/1.1', ip: '::ffff:74.7.227.10' }).verificationStatus, 'verified');
+});

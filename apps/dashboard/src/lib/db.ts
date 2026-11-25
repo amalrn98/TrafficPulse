@@ -1,6 +1,10 @@
 import { prisma } from './prisma';
 import { TrafficCategory, ActorFamily, TrafficIntent, ActorType, VerificationStatus, ActivityType } from '@trafficpulse/classifier';
 import crypto from 'crypto';
+import { promisify } from 'util';
+
+const scryptAsync = promisify(crypto.scrypt) as (pw: string, salt: string, len: number) => Promise<Buffer>;
+const API_KEY_FORMAT = /^tp_live_[0-9a-f]{36}$/;
 
 export interface StoredEvent {
   id: string;
@@ -49,6 +53,7 @@ const SITE_CACHE_TTL_MS = 60 * 1000;
 
 export class TrafficPulseDb {
   private static derivedKeyCache = new Map<string, string>();
+  private static readonly SCRYPT_SALT_FALLBACK = 'trafficpulse-kdf-salt-v1';
   private siteByIdCache = new Map<string, CachedEntry<SiteRecord>>();
   private siteByKeyHashCache = new Map<string, CachedEntry<SiteRecord>>();
 
@@ -79,6 +84,17 @@ export class TrafficPulseDb {
     }
     TrafficPulseDb.derivedKeyCache.set(cleanKey, derived);
     return derived;
+  }
+
+  /**
+   * Non-blocking derivation used for request-time lookups. scryptSync would stall the
+   * event loop (about 40 ms per call) for every attacker-supplied key. Nothing is cached
+   * here: only keys that match a site are cached (see getSiteByApiKey), so attacker-chosen
+   * keys can neither fill nor evict the cache.
+   */
+  public static async hashApiKeyAsync(apiKey: string): Promise<string> {
+    const salt = process.env.API_KEY_SALT || TrafficPulseDb.SCRYPT_SALT_FALLBACK;
+    return (await scryptAsync(apiKey.trim(), salt, 32)).toString('hex');
   }
 
   private cacheSite(site: SiteRecord): void {
@@ -180,8 +196,14 @@ export class TrafficPulseDb {
    * Finds a site by its raw API key by computing its scrypt KDF hash.
    */
   public async getSiteByApiKey(apiKey: string): Promise<SiteRecord | null> {
-    const hash = TrafficPulseDb.hashApiKey(apiKey);
-    const cached = this.siteByKeyHashCache.get(hash);
+    const clean = apiKey.trim();
+    if (!clean || clean.length > 128) return null;
+    // Keys we generate have a fixed format; skip the expensive KDF for anything else.
+    // Non-matching values can still be legacy plaintext keys, which are a cheap lookup.
+    const wellFormed = API_KEY_FORMAT.test(clean);
+    const knownHash = TrafficPulseDb.derivedKeyCache.get(clean);
+    const hash = wellFormed ? knownHash ?? (await TrafficPulseDb.hashApiKeyAsync(clean)) : '';
+    const cached = hash ? this.siteByKeyHashCache.get(hash) : undefined;
     if (cached && cached.expiresAt > Date.now()) {
       return cached.value.isRevoked ? null : cached.value;
     }
@@ -189,13 +211,22 @@ export class TrafficPulseDb {
     const site = await prisma.site.findFirst({
       where: {
         OR: [
-          { keyHash: hash },
-          { apiKey: apiKey }, // Legacy migration fallback
+          ...(hash ? [{ keyHash: hash }] : []),
+          { apiKey: clean }, // Legacy migration fallback
         ],
         isRevoked: false,
       },
     });
     if (!site) return null;
+
+    // Remember the derivation only for keys that matched a real site (bounded).
+    if (hash && !knownHash) {
+      if (TrafficPulseDb.derivedKeyCache.size >= 1000) {
+        const oldest = TrafficPulseDb.derivedKeyCache.keys().next().value;
+        if (oldest !== undefined) TrafficPulseDb.derivedKeyCache.delete(oldest);
+      }
+      TrafficPulseDb.derivedKeyCache.set(clean, hash);
+    }
 
     const record: SiteRecord = {
       id: site.id,
@@ -303,7 +334,9 @@ export class TrafficPulseDb {
       }
     }
 
-    const created = await prisma.event.create({
+    let created;
+    try {
+      created = await prisma.event.create({
       data: {
         siteId: event.siteId,
         idempotencyKey: event.idempotencyKey || null,
@@ -325,11 +358,30 @@ export class TrafficPulseDb {
         ip: event.ip || null,
         referer: event.referer || null,
         statusCode: event.statusCode,
-        durationMs: event.durationMs || null,
+        durationMs: event.durationMs ?? null,
         clientHints: event.clientHints ? JSON.stringify(event.clientHints) : null,
         isDemo: event.isDemo,
       },
-    });
+      });
+    } catch (err: unknown) {
+      // Concurrent request with the same idempotency key won the race (unique violation).
+      if (event.idempotencyKey && (err as { code?: string })?.code === 'P2002') {
+        const winner = await prisma.event.findUnique({
+          where: { siteId_idempotencyKey: { siteId: event.siteId, idempotencyKey: event.idempotencyKey } },
+        });
+        if (winner) {
+          return {
+            event: {
+              ...(event as Omit<StoredEvent, 'id'>),
+              id: winner.id,
+              timestamp: winner.timestamp.toISOString(),
+            },
+            isDuplicate: true,
+          };
+        }
+      }
+      throw err;
+    }
 
     return {
       event: {

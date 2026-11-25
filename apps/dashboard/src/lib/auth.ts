@@ -6,35 +6,35 @@
 import crypto from 'crypto';
 import { NextRequest } from 'next/server';
 
+/** Secrets copied unchanged from .env.example must never grant access. */
+function isPlaceholderSecret(v: string): boolean {
+  return /change_this|tp_metrics_secret_token|tp_admin_change/i.test(v);
+}
+
 function safeCompareStrings(candidate: string, secret: string): boolean {
   if (!candidate || !secret) return false;
+  // Constant-time comparison. Length is the only thing a mismatch can reveal, which is standard
+  // for equality checks on fixed-format secrets. (This is a comparison, not password storage.)
   const bufA = Buffer.from(candidate, 'utf8');
   const bufB = Buffer.from(secret, 'utf8');
   if (bufA.length !== bufB.length) {
-    crypto.timingSafeEqual(bufA, bufA);
+    crypto.timingSafeEqual(bufB, bufB); // keep timing independent of the candidate
     return false;
   }
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-function readCookieValue(cookieHeader: string | null, name: string): string {
-  if (!cookieHeader) return '';
-  const parts = cookieHeader.split(';');
-  for (const part of parts) {
-    const [k, ...rest] = part.trim().split('=');
-    if (k === name) {
-      return decodeURIComponent(rest.join('='));
-    }
-  }
-  return '';
-}
-
 /**
  * Validates admin authentication via ADMIN_API_KEY environment variable.
- * Accepts header Authorization: Bearer <key>, X-Admin-Key: <key>, or tp_admin_key cookie.
+ * Accepts header Authorization: Bearer <key> or X-Admin-Key: <key>.
+ * Cookies are intentionally not accepted (no CSRF surface).
  */
 export function verifyAdminAuth(req: NextRequest | Request): { authorized: boolean; error?: string } {
   const adminKey = process.env.ADMIN_API_KEY;
+
+  if (adminKey && process.env.NODE_ENV === 'production' && isPlaceholderSecret(adminKey)) {
+    return { authorized: false, error: 'ADMIN_API_KEY is still the example placeholder; set a random value' };
+  }
 
   // In development, if ADMIN_API_KEY is unset, allow requests
   if (!adminKey) {
@@ -46,15 +46,12 @@ export function verifyAdminAuth(req: NextRequest | Request): { authorized: boole
 
   const authHeader = req.headers.get('authorization') || '';
   const xAdminKey = req.headers.get('x-admin-key') || '';
-  const cookieKey = readCookieValue(req.headers.get('cookie'), 'tp_admin_key');
 
   let candidate = '';
   if (authHeader.startsWith('Bearer ')) {
     candidate = authHeader.substring(7).trim();
   } else if (xAdminKey) {
     candidate = xAdminKey.trim();
-  } else if (cookieKey) {
-    candidate = cookieKey.trim();
   }
 
   if (!safeCompareStrings(candidate, adminKey)) {
@@ -74,6 +71,10 @@ export function verifyMetricsAuth(req: NextRequest | Request): { authorized: boo
   }
 
   const metricsToken = process.env.METRICS_AUTH_TOKEN || process.env.ADMIN_API_KEY;
+
+  if (metricsToken && process.env.NODE_ENV === 'production' && isPlaceholderSecret(metricsToken)) {
+    return { authorized: false, error: 'METRICS_AUTH_TOKEN is still the example placeholder; set a random value' };
+  }
 
   if (!metricsToken) {
     if (process.env.NODE_ENV === 'production') {
